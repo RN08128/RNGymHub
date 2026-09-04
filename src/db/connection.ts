@@ -8,7 +8,7 @@ export const pool = new Pool({
   host: 'localhost',
   port: 5432,
   user: 'postgres',
-  password: '08082008',
+  password: '',
   database: 'gym_logbook',
 });
 
