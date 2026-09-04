@@ -6,7 +6,7 @@ export const personalRecordSchema = z.object({
   max_volume_set: z.number().default(0),
 });
 
-// Schema da resposta do treino pré-carregado (Opção B)
+// Schema da resposta do treino pré-carregado
 export const getActiveWorkoutResponseSchema = z.object({
   workout_id: z.string(),
   workout_name: z.string(),
@@ -46,3 +46,27 @@ export const saveWorkoutLogSchema = z.object({
 
 export type ActiveWorkoutResponse = z.infer<typeof getActiveWorkoutResponseSchema>;
 export type SaveWorkoutLogInput = z.infer<typeof saveWorkoutLogSchema>;
+
+// Schema para criar um novo exercício
+export const createExerciseSchema = z.object({
+  name: z.string().min(2, "O nome deve ter no mínimo 2 caracteres"),
+  target_muscle: z.string().min(2, "Informe o grupo muscular"),
+  image_url: z.string().url().nullable().optional(),
+});
+
+// Schema para criar uma nova ficha de treino
+export const createWorkoutSchema = z.object({
+  user_id: z.string().uuid("ID de usuário inválido"),
+  name: z.string().min(2, "O nome do treino é obrigatório"),
+  description: z.string().optional(),
+  exercises: z.array(
+    z.object({
+      exercise_id: z.string().uuid(),
+      target_sets: z.number().min(1).default(3),
+      target_reps: z.number().min(1).default(10),
+    })
+  ).min(1, "Adicione pelo menos um exercício à ficha"),
+});
+
+export type CreateExerciseInput = z.infer<typeof createExerciseSchema>;
+export type CreateWorkoutInput = z.infer<typeof createWorkoutSchema>;

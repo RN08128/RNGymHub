@@ -1,49 +1,49 @@
-import { pool } from './connection.ts';
+import { pool } from './connection.js';
 
 async function seed() {
-  console.log('🌱 Populando banco de dados com dados iniciais...');
+  console.log('🌱 Inserindo dados de teste no banco...');
 
   try {
-    // 1. Inserir usuário de teste
+    // 1. Usuário
     const userRes = await pool.query(`
       INSERT INTO users (name, email, password_hash)
-      VALUES ('Treinador', 'teste@logbook.com', 'hash_senha_123')
-      ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+      VALUES ('Atleta Teste', 'atleta@test.com', 'hash123')
       RETURNING id;
     `);
     const userId = userRes.rows[0].id;
 
-    // 2. Inserir exercícios padrão
-    const exercisesRes = await pool.query(`
+    // 2. Exercício
+    const exRes = await pool.query(`
       INSERT INTO exercises (name, target_muscle)
-      VALUES 
-        ('Supino Reto com Barra', 'Peitoral'),
-        ('Agachamento Livre', 'Quadríceps'),
-        ('Puxada Alta', 'Dorsal')
-      RETURNING id, name;
-    `);
-
-    const supinoId = exercisesRes.rows[0].id;
-
-    // 3. Inserir uma ficha de treino de teste
-    const workoutRes = await pool.query(`
-      INSERT INTO workouts (user_id, name, description)
-      VALUES ('${userId}', 'Treino A - Peitoral e Tríceps', 'Ficha focada em hipertrofia')
+      VALUES ('Supino Reto com Barra', 'Peitoral')
       RETURNING id;
     `);
+    const exerciseId = exRes.rows[0].id;
+
+    // 3. Ficha de Treino
+    const workoutRes = await pool.query(
+      `
+      INSERT INTO workouts (user_id, name, description)
+      VALUES ($1, 'Treino A - Peitoral e Tríceps', 'Treino focado em força')
+      RETURNING id;
+      `,
+      [userId]
+    );
     const workoutId = workoutRes.rows[0].id;
 
-    // 4. Vincular o Supino na Ficha
-    await pool.query(`
+    // 4. Vincular Exercício à Ficha
+    await pool.query(
+      `
       INSERT INTO workout_exercises (workout_id, exercise_id, order_index, target_sets, target_reps)
-      VALUES ('${workoutId}', '${supinoId}', 1, 3, 10);
-    `);
+      VALUES ($1, $2, 1, 3, 10);
+      `,
+      [workoutId, exerciseId]
+    );
 
-    console.log('✅ Banco populado com sucesso!');
-    console.log(`📌 ID do Usuário: ${userId}`);
-    console.log(`📌 ID da Ficha: ${workoutId}`);
-  } catch (error) {
-    console.error('❌ Erro ao popular banco:', error);
+    console.log('✅ Dados inseridos!');
+    console.log(`📌 Guarde este ID de Treino para testar: ${workoutId}`);
+  } catch (err) {
+    console.error('Erro no seed:', err);
   } finally {
     await pool.end();
   }

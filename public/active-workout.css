@@ -1,0 +1,207 @@
+/* ==========================================
+   ESTILOS ESPECÍFICOS: TREINO ATIVO (ACTIVE WORKOUT)
+   ========================================== */
+
+/* Container Principal */
+.container {
+  max-width: 700px;
+  width: 90vw;
+  margin: 0 auto;
+  padding: 24px 0 40px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+h1#workout-title {
+  font-size: 1.8rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: #ffffff;
+}
+
+.subtitle {
+  color: #a0a0a0;
+  font-size: 0.95rem;
+}
+
+/* Card do Exercício */
+#exercises-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.exercise-card {
+  background-color: #1e1e1e;
+  border: 1px solid #2d2d2d;
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+
+.exercise-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #2a2a2a;
+  margin-bottom: 12px;
+}
+
+.exercise-title {
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: #ffffff;
+}
+
+.pr-badge-info {
+  color: #3b82f6;
+  font-size: 0.8rem;
+  background: rgba(59, 130, 246, 0.12);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-weight: 600;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+/* Tabela de Séries */
+.set-header-row {
+  display: grid;
+  grid-template-columns: 40px 1fr 1fr 50px;
+  gap: 12px;
+  align-items: center;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #71717a;
+  font-weight: 700;
+  padding: 0 4px 8px 4px;
+  text-align: center;
+}
+
+.sets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.set-row {
+  display: grid;
+  grid-template-columns: 40px 1fr 1fr 50px;
+  gap: 12px;
+  align-items: center;
+  padding: 4px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.set-row.completed {
+  background-color: rgba(34, 197, 94, 0.05);
+}
+
+.set-row.is-pr {
+  background-color: rgba(234, 179, 8, 0.08);
+}
+
+.set-num {
+  text-align: center;
+  font-weight: 700;
+  color: #a1a1aa;
+  font-size: 0.9rem;
+}
+
+/* Força os Inputs dentro da tabela de séries a ficarem na horizontal */
+.set-row input[type="number"] {
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 10px 8px !important;
+  background-color: #121212 !important;
+  border: 1px solid #333333 !important;
+  border-radius: 8px !important;
+  color: #ffffff !important;
+  font-size: 0.95rem !important;
+  text-align: center !important;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.set-row input[type="number"]:focus {
+  border-color: #007bff !important;
+}
+
+/* Remove as setinhas padrões de número dos navegadores */
+.set-row input[type="number"]::-webkit-outer-spin-button,
+.set-row input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.set-row input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Botão de Check / Marcação */
+.btn-check {
+  width: 100%;
+  height: 38px;
+  margin: 0 !important;
+  padding: 0 !important;
+  background-color: #27272a;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  color: #a1a1aa;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-check:hover {
+  border-color: #22c55e;
+  color: #22c55e;
+}
+
+.btn-check.active {
+  background-color: #22c55e !important;
+  border-color: #22c55e !important;
+  color: #ffffff !important;
+}
+
+.btn-check.pr-active {
+  background-color: #eab308 !important;
+  border-color: #eab308 !important;
+  color: #18181b !important;
+  font-size: 1.1rem;
+}
+
+/* Botão Finalizar */
+.btn-finish {
+  width: 100%;
+  padding: 14px;
+  background-color: #22c55e;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 12px;
+  transition: background-color 0.2s;
+}
+
+.btn-finish:hover {
+  background-color: #16a34a;
+}
+
+/* Resumo ao concluir */
+.summary-box {
+  background: #1f1f1f;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #262626;
+  margin-top: 8px;
+}

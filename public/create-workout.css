@@ -1,0 +1,265 @@
+/* ==========================================
+   ESTILOS ESPECÍFICOS: CRIAR FICHA DE TREINO
+   ========================================== */
+
+/* Container Principal */
+.container {
+  max-width: 700px;
+  width: 90vw;
+  margin: 0 auto;
+  padding: 24px 0 40px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Card do Formulário Inicial */
+.form-card {
+  background-color: #1e1e1e;
+  border: 1px solid #2d2d2d;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group label {
+  font-size: 0.85rem;
+  color: #a1a1aa;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+/* Inputs e Selects */
+input[type="text"],
+input[type="number"],
+select {
+  width: 100%;
+  padding: 10px 12px;
+  background-color: #121212;
+  border: 1px solid #333333;
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 0.95rem;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+select:focus {
+  border-color: #007bff;
+}
+
+/* Seção de Seleção de Exercícios */
+.exercise-selection {
+  background-color: #1e1e1e;
+  border: 1px solid #2d2d2d;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-header h3 {
+  font-size: 1.1rem;
+  color: #ffffff;
+  margin: 0;
+}
+
+.added-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.empty-msg {
+  color: #71717a;
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 12px 0;
+}
+
+/* Item de Exercício Adicionado */
+.added-exercise {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #121212;
+  border: 1px solid #2a2a2a;
+  padding: 10px 14px;
+  border-radius: 8px;
+}
+
+.added-exercise-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: #ffffff;
+}
+
+.added-exercise-info small {
+  color: #007bff;
+  font-weight: 600;
+}
+
+.btn-remove-item {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.btn-remove-item:hover {
+  background-color: rgba(239, 68, 68, 0.15);
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid #2d2d2d;
+  margin: 4px 0;
+}
+
+/* Select com botão de deletar alinhados */
+.select-with-action {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-delete-icon {
+  background-color: rgba(239, 68, 68, 0.15);
+  border: 1px solid #ef4444;
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 0 14px;
+  height: 40px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background 0.2s;
+}
+
+.btn-delete-icon:hover {
+  background-color: #ef4444;
+}
+
+.link-new-ex {
+  background: none;
+  border: none;
+  color: #007bff;
+  font-size: 0.85rem;
+  cursor: pointer;
+  margin-top: 6px;
+  text-align: left;
+  padding: 0;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.grid-2-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* Botões Globais */
+.btn-secondary {
+  background-color: #27272a;
+  border: 1px solid #3f3f46;
+  color: #ffffff;
+  padding: 12px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-secondary:hover {
+  background-color: #3f3f46;
+}
+
+/* Grupo de Ações Finais */
+.actions-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.btn-outline {
+  background-color: transparent;
+  border: 1px solid #007bff;
+  color: #007bff;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.btn-outline:hover {
+  background-color: #007bff;
+  color: #ffffff;
+}
+
+.btn-finish {
+  background-color: #22c55e;
+  color: #ffffff;
+  border: none;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.btn-finish:hover {
+  background-color: #16a34a;
+}
+
+/* Modal Styling */
+.modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+}
+
+.modal-content {
+  background-color: #1e1e1e;
+  border: 1px solid #2d2d2d;
+  padding: 24px;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal-content h3 {
+  margin: 0 0 4px 0;
+  color: #ffffff;
+}

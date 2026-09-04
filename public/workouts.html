@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RNGymHub - Escolher Treino</title>
+  <link rel="stylesheet" href="style-global.css">
+  <link rel="stylesheet" href="workouts.css">
+</head>
+<body>
+
+  <header class="main-header">
+    <div class="nav-container">
+      <a href="workouts.html" class="brand-logo">
+        ⚡RNGymHub
+      </a>
+      <nav>
+        <ul class="nav-links">
+          <li class="nav-item">
+            <a href="workouts.html" id="nav-workouts" class="active">🏋️ Treinos</a>
+          </li>
+          <li class="nav-item">
+            <a href="history.html" id="nav-history">📊 Histórico</a>
+          </li>
+          <li class="nav-item">
+            <a href="create-workout.html" id="nav-create" class="btn-create-nav">➕ Criar Ficha</a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <h2>Iniciar Treino</h2>
+
+    <!-- Alternar entre Fichas Criadas e Modelos -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('custom', event)">Minhas Fichas</button>
+      <button class="tab-btn" onclick="switchTab('templates', event)">Treinos Prontos (Modelos)</button>
+    </div>
+
+    <!-- Grid onde as fichas serão renderizadas -->
+    <div id="workout-list" class="workout-grid">
+      <p style="color: #aaa;">Carregando fichas...</p>
+    </div>
+  </main>
+
+  <script src="workouts.js" defer></script>
+  <script src="nav.js" defer></script>
+</body>
+</html>

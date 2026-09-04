@@ -1,0 +1,105 @@
+/* Reset básico para navegação */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #121212;
+  color: #ffffff;
+}
+
+/* Header & Navbar Container */
+.main-header {
+  background-color: #1e1e1e;
+  border-bottom: 1px solid #333;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.nav-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Logotipo */
+.brand-logo {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #007bff;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Links de Navegação */
+.nav-links {
+  display: flex;
+  list-style: none;
+  gap: 8px;
+}
+
+.nav-item a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  color: #b0b0b0;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: all 0.2s ease-in-out;
+}
+
+/* Hover e Link Ativo */
+.nav-item a:hover {
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.nav-item a.active {
+  color: #ffffff;
+  background-color: #007bff;
+}
+
+/* Destaque para o botão Criar Ficha */
+.nav-item a.btn-create-nav {
+  border: 1px dashed #007bff;
+  color: #007bff;
+}
+
+.nav-item a.btn-create-nav:hover {
+  background-color: #007bff;
+  color: #ffffff;
+}
+
+/* Ajustes para telas menores (Mobile) */
+@media (max-width: 600px) {
+  .nav-container {
+    padding: 0 12px;
+  }
+
+  .brand-logo span {
+    display: none; /* Oculta texto longo no mobile se necessário */
+  }
+
+  .nav-links {
+    gap: 4px;
+  }
+
+  .nav-item a {
+    padding: 6px 10px;
+    font-size: 0.85rem;
+  }
+}
