@@ -10,7 +10,7 @@ const pool = new Pool({
   user: 'postgres',
   host: 'localhost',
   database: 'gym_logbook', // Altere para o nome do seu banco de dados
-  password: '08082008', // Altere para a sua senha
+  password: '', // Altere para a sua senha
   port: 5432,
 });
 
