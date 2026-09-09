@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RNGymHub - Autenticação</title>
+  <link rel="stylesheet" href="style-global.css">
+  <link rel="stylesheet" href="auth.css">
+</head>
+<body>
+
+  <main class="auth-container">
+    <div class="auth-card">
+      <h1 class="brand-title">⚡ RNGymHub</h1>
+
+      <!-- TAB TOGGLE -->
+      <div class="auth-tabs" id="auth-tabs">
+        <button type="button" class="auth-tab-btn active" onclick="switchAuthTab('login')">Entrar</button>
+        <button type="button" class="auth-tab-btn" onclick="switchAuthTab('register')">Cadastrar</button>
+      </div>
+
+      <!-- FORMULÁRIO DE LOGIN -->
+      <form id="form-login" class="auth-form" onsubmit="handleLogin(event)">
+        <h2>Acesse sua conta</h2>
+        <p class="subtitle">Insira suas credenciais para continuar</p>
+
+        <div class="input-group">
+          <label for="login-input">Usuário ou E-mail</label>
+          <input type="text" id="login-input" placeholder="seu_usuario ou email@exemplo.com" required>
+        </div>
+
+        <div class="input-group">
+          <label for="login-password">Senha</label>
+          <input type="password" id="login-password" placeholder="••••••••" required>
+        </div>
+
+        <button type="submit" class="btn-primary">Entrar</button>
+      </form>
+
+      <!-- FORMULÁRIO DE REGISTRO (PASSO 1) -->
+      <form id="form-register" class="auth-form hidden" onsubmit="handleRegisterRequest(event)">
+        <h2>Criar conta</h2>
+        <p class="subtitle">Preencha seus dados para se cadastrar</p>
+
+        <div class="input-group">
+          <label for="reg-name">Nome de usuário</label>
+          <input type="text" id="reg-name" placeholder="ex: usuario123" required minlength="3">
+        </div>
+
+        <div class="input-group">
+          <label for="reg-email">E-mail</label>
+          <input type="email" id="reg-email" placeholder="seu@email.com" required>
+        </div>
+
+        <div class="input-group">
+          <label for="reg-password">Senha</label>
+          <input type="password" id="reg-password" placeholder="Mínimo 6 caracteres" required minlength="6">
+        </div>
+
+        <button type="submit" class="btn-primary" id="btn-reg-submit">Enviar Código de Confirmação</button>
+      </form>
+
+      <!-- FORMULÁRIO DE VERIFICAÇÃO DE CÓDIGO (PASSO 2) -->
+      <form id="form-verify" class="auth-form hidden" onsubmit="handleVerifyCode(event)">
+        <h2>Verificar E-mail</h2>
+        <p class="subtitle">Enviamos um código de 6 dígitos para <strong id="display-email" style="color: #007bff;"></strong></p>
+
+        <div class="input-group">
+          <label for="verify-code">Código de 6 dígitos</label>
+          <input type="text" id="verify-code" placeholder="123456" maxlength="6" pattern="[0-9]{6}" required style="text-align: center; letter-spacing: 6px; font-size: 1.3rem;">
+        </div>
+
+        <button type="submit" class="btn-primary">Confirmar e Ativar Conta</button>
+        <button type="button" class="btn-secondary" onclick="switchAuthTab('register')" style="margin-top: 10px;">Voltar</button>
+      </form>
+
+      <div id="auth-feedback" class="feedback-msg"></div>
+    </div>
+  </main>
+
+  <script src="auth.js" defer></script>
+</body>
+</html>

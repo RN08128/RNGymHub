@@ -1,0 +1,131 @@
+.auth-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.auth-card {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 32px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+.brand-title {
+  text-align: center;
+  margin-bottom: 24px;
+  font-size: 1.8rem;
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 8px;
+  background: #121212;
+  padding: 4px;
+  border-radius: 8px;
+  margin-bottom: 24px;
+}
+
+.auth-tab-btn {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  background: transparent;
+  color: #aaa;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+
+.auth-tab-btn.active {
+  background: #252525;
+  color: #fff;
+}
+
+.auth-form h2 {
+  font-size: 1.3rem;
+  margin-bottom: 4px;
+}
+
+.auth-form .subtitle {
+  color: #888;
+  font-size: 0.85rem;
+  margin-bottom: 20px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.input-group label {
+  font-size: 0.85rem;
+  color: #ccc;
+}
+
+.input-group input {
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid #333;
+  background: #121212;
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.input-group input:focus {
+  outline: none;
+  border-color: #007bff;
+}
+
+.btn-primary {
+  width: 100%;
+  padding: 12px;
+  background: #007bff;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 1rem;
+  transition: background 0.2s;
+}
+
+.btn-primary:hover {
+  background: #0056b3;
+}
+
+.btn-secondary {
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  color: #aaa;
+  border: 1px solid #333;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.feedback-msg {
+  margin-top: 16px;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.feedback-msg.error {
+  color: #ff4d4d;
+}
+
+.feedback-msg.success {
+  color: #28a745;
+}

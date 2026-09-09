@@ -3,10 +3,21 @@ var API_URL = window.API_URL;
 let availableExercises = [];
 let selectedExercises = [];
 
+// Helper para obter os headers padrões com autenticação JWT
+function getAuthHeaders() {
+  const token = localStorage.getItem('@RNGymHub:token');
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': token ? `Bearer ${token}` : ''
+  };
+}
+
 // 1. Carregar lista de exercícios
 async function fetchExercises() {
   try {
-    const res = await fetch(`${API_URL}/exercises`);
+    const res = await fetch(`${API_URL}/exercises`, {
+      headers: getAuthHeaders()
+    });
     availableExercises = await res.json();
 
     const select = document.getElementById('select-exercise');
@@ -42,6 +53,8 @@ async function deleteSelectedExercise() {
   try {
     const res = await fetch(`${API_URL}/exercises/${exerciseId}`, {
       method: 'DELETE',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ exerciseId }) // Envia o ID do exercício no corpo da requisição
     });
 
     if (res.ok) {
@@ -118,7 +131,7 @@ async function createNewExercise() {
   try {
     const res = await fetch(`${API_URL}/exercises`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ name, target_muscle })
     });
 
@@ -139,6 +152,14 @@ async function createNewExercise() {
 
 // 6. Salvar Ficha (com suporte para "Apenas Salvar" ou "Salvar e Iniciar")
 async function saveWorkout(startImmediately = false) {
+  const token = localStorage.getItem('@RNGymHub:token');
+
+  if (!token) {
+    alert('Sessão expirada ou não iniciada. Por favor, faça login novamente.');
+    window.location.href = 'auth.html';
+    return;
+  }
+
   const name = document.getElementById('workout-name').value.trim();
   const description = document.getElementById('workout-desc').value.trim();
 
@@ -147,8 +168,8 @@ async function saveWorkout(startImmediately = false) {
     return;
   }
 
+  // Removido o user_id do payload (o backend agora pega do JWT)
   const payload = {
-    user_id: "00000000-0000-0000-0000-000000000000",
     name,
     description,
     exercises: selectedExercises.map(item => ({
@@ -161,7 +182,7 @@ async function saveWorkout(startImmediately = false) {
   try {
     const res = await fetch(`${API_URL}/workouts`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(payload)
     });
 
@@ -175,6 +196,11 @@ async function saveWorkout(startImmediately = false) {
         window.location.href = 'workouts.html';
       }
     } else {
+      if (res.status === 401) {
+        alert('Sua sessão expirou. Faça login novamente.');
+        window.location.href = 'auth.html';
+        return;
+      }
       alert(data.message || 'Erro ao salvar treino.');
     }
   } catch (err) {
