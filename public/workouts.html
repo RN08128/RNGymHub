@@ -31,15 +31,16 @@
   </header>
 
   <main class="container">
-    <h2>Iniciar Treino</h2>
+    <h2>Fichas e Divisões de Treino</h2>
 
-    <!-- Alternar entre Fichas Criadas e Modelos -->
+    <!-- Alternar entre as 3 abas solicitadas -->
     <div class="tabs">
       <button class="tab-btn active" onclick="switchTab('custom', event)">Minhas Fichas</button>
-      <button class="tab-btn" onclick="switchTab('templates', event)">Treinos Prontos (Modelos)</button>
+      <button class="tab-btn" onclick="switchTab('templates', event)">Treinos Prontos</button>
+      <button class="tab-btn" onclick="switchTab('routines', event)">Divisões Prontas</button>
     </div>
 
-    <!-- Grid onde as fichas serão renderizadas -->
+    <!-- Grid onde as fichas/divisões serão renderizadas -->
     <div id="workout-list" class="workout-grid">
       <p style="color: #aaa;">Carregando fichas...</p>
     </div>

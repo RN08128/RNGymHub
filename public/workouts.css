@@ -2,6 +2,7 @@
     display: flex;
     gap: 12px;
     margin-bottom: 24px;
+    flex-wrap: wrap;
 }
 
 .tab-btn {
@@ -54,22 +55,39 @@
     margin-top: 6px;
 }
 
-.btn-delete-workout {
-    background: rgba(239, 68, 68, 0.15);
-    border: 1px solid rgba(239, 68, 68, 0.3);
+.workout-card-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.btn-delete-workout,
+.btn-edit-workout {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     color: #ffffff;
     border-radius: 6px;
     padding: 6px 8px;
     cursor: pointer;
     font-size: 0.9rem;
-    transition: background 0.2s;
+    transition: background 0.2s, border-color 0.2s;
     line-height: 1;
+}
+
+.btn-edit-workout:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.btn-delete-workout {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .btn-delete-workout:hover {
     background: #ef4444;
 }
 
+/* Botão Iniciar Treino (Verde) */
 .btn-start {
     width: 100%;
     padding: 10px;
@@ -85,4 +103,33 @@
 
 .btn-start:hover {
     background: #218838;
+}
+
+/* Botão Copiar / Adicionar Treino ou Divisão (Azul) */
+.btn-copy {
+    width: 100%;
+    padding: 10px;
+    background: #007bff;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    margin-top: 16px;
+    transition: background 0.2s;
+}
+
+.btn-copy:hover {
+    background: #0056b3;
+}
+
+.badge-category {
+    display: inline-block;
+    background: rgba(0, 123, 255, 0.2);
+    color: #66b0ff;
+    font-size: 0.75rem;
+    font-weight: bold;
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin-top: 8px;
 }

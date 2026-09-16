@@ -21,7 +21,7 @@ const pool = new Pool({
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST || 'smtp.gmail.com',
   port: Number(process.env.EMAIL_PORT) || 587,
-  secure: false, // true para porta 465, false para 587
+  secure: false,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -119,7 +119,6 @@ const DEFAULT_EXERCISES = [
   { name: 'Panturrilha no Leg Press', target_muscle: 'Panturrilha' },
 ];
 
-// Injeta os exercícios padrão no cadastro do usuário
 async function populateDefaultExercisesForUser(client: PoolClient, userId: string) {
   for (const ex of DEFAULT_EXERCISES) {
     await client.query(
@@ -129,7 +128,7 @@ async function populateDefaultExercisesForUser(client: PoolClient, userId: strin
   }
 }
 
-// Função de Migrações Automáticas
+// Migrações do Banco de Dados
 async function runMigrations() {
   try {
     await pool.query(`
@@ -153,17 +152,89 @@ async function runMigrations() {
       ON users (email) 
       WHERE is_verified = TRUE;
 
-      -- Adiciona user_id na tabela exercises para isolamento por usuário
       ALTER TABLE exercises
       ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
 
-      -- Adiciona is_template na tabela workouts caso não exista
       ALTER TABLE workouts
       ADD COLUMN IF NOT EXISTS is_template BOOLEAN DEFAULT FALSE;
+
+      -- Tabelas para Divisões de Treinos Prontas (Routine Templates)
+      CREATE TABLE IF NOT EXISTS routine_templates (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(100) NOT NULL,
+        description TEXT NOT NULL,
+        category VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS routine_template_workouts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        routine_template_id UUID REFERENCES routine_templates(id) ON DELETE CASCADE,
+        workout_id UUID REFERENCES workouts(id) ON DELETE CASCADE,
+        day_order INT NOT NULL
+      );
     `);
+
+    // Inserir Divisões Prontas Padrões se a tabela estiver vazia
+    const routinesCount = await pool.query('SELECT COUNT(*) FROM routine_templates');
+    if (parseInt(routinesCount.rows[0].count, 10) === 0) {
+      await seedDefaultRoutineTemplates();
+    }
+
     console.log('✅ Migrações executadas com sucesso!');
   } catch (err) {
     console.error('❌ Erro ao executar migrações:', err);
+  }
+}
+
+// Injeta Divisões Padrão no Sistema
+async function seedDefaultRoutineTemplates() {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const routines = [
+      {
+        name: 'PPL (Push / Pull / Legs)',
+        description: 'Divisão clássica focada em Empurrar, Puxar e Pernas. Alta frequência e excelente recuperação muscular.',
+        category: 'PPL',
+      },
+      {
+        name: 'Upper / Lower (Superior / Inferior)',
+        description: 'Divisão de 4 dias dividindo o corpo entre membros superiores e inferiores. Ótimo equilíbrio de volume e intensidade.',
+        category: 'Upper Lower',
+      },
+      {
+        name: 'PPL + Upper / Lower (5 Dias)',
+        description: 'Combinação hipertrófica de 5 dias semanais unindo a estrutura PPL com dois dias de estímulo geral de Superior e Inferior.',
+        category: 'PPL + Upper Lower',
+      },
+      {
+        name: 'Full Body (Corpo Todo - 3x)',
+        description: 'Treino de corpo inteiro 3 vezes por semana. Ideal para iniciantes ou rotinas corridas, maximizando a síntese proteica semanal.',
+        category: 'Full Body',
+      },
+      {
+        name: 'Anterior / Posterior',
+        description: 'Foco na cadeia anterior (Peito, Quadríceps, Abdômen, Ombro Frontal) alternado com a cadeia posterior (Costas, Isquiotibiais, Glúteos, Panturrilha).',
+        category: 'Anterior Posterior',
+      },
+    ];
+
+    for (const r of routines) {
+      await client.query(
+        'INSERT INTO routine_templates (name, description, category) VALUES ($1, $2, $3)',
+        [r.name, r.description, r.category]
+      );
+    }
+
+    await client.query('COMMIT');
+    console.log('✅ Divisões de treinos prontas criadas com sucesso!');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('❌ Erro ao povoar divisões prontas:', err);
+  } finally {
+    client.release();
   }
 }
 
@@ -172,22 +243,18 @@ async function main() {
     throw new Error("❌ ERRO: A variável JWT_SECRET não foi configurada no arquivo .env!");
   }
 
-  // 1. Configuração do CORS
   await app.register(cors, {
     origin: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
-  // 2. Registro do Plugin JWT
   await app.register(fastifyJwt, {
     secret: process.env.JWT_SECRET,
   });
 
-  // 3. Execução das migrações do banco
   await runMigrations();
 
-  // 4. Middleware de Autenticação JWT
   app.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       await request.jwtVerify();
@@ -200,7 +267,6 @@ async function main() {
   // ROTAS DE AUTENTICAÇÃO E CADASTRO
   // ==========================================
 
-  // 1. Solicitar cadastro (gera e envia o código por e-mail)
   app.post('/auth/register-request', async (request, reply) => {
     const registerSchema = z.object({
       name: z.string().min(3),
@@ -232,7 +298,6 @@ async function main() {
         [name, email, password_hash, verification_code, code_expires_at]
       );
 
-      // Envio do e-mail ao requisitante
       await transporter.sendMail({
         from: `"RNGymHub" <${process.env.EMAIL_USER}>`,
         to: email,
@@ -259,7 +324,6 @@ async function main() {
     }
   });
 
-  // 2. Confirmar o código de verificação e popular exercícios padrão
   app.post('/auth/verify-code', async (request, reply) => {
     const verifySchema = z.object({
       email: z.string().email(),
@@ -304,10 +368,8 @@ async function main() {
 
       const activeUser = updatedUserRes.rows[0];
 
-      // Popula a lista padrão de exercícios para a nova conta
       await populateDefaultExercisesForUser(client, activeUser.id);
 
-      // Remove tentativas antigas não verificadas do mesmo e-mail
       await client.query(
         'DELETE FROM users WHERE email = $1 AND is_verified = false AND id != $2',
         [email, activeUser.id]
@@ -334,7 +396,6 @@ async function main() {
     }
   });
 
-  // 3. Login
   app.post('/auth/login', async (request, reply) => {
     const loginSchema = z.object({
       login: z.string().min(1),
@@ -376,10 +437,191 @@ async function main() {
   });
 
   // ==========================================
+  // NOVAS ROTAS: TREINOS PRONTOS E DIVISÕES
+  // ==========================================
+
+  // 1. Listar Treinos Prontos (Aba "Treinos Prontos")
+  app.get('/workouts/templates', async (request, reply) => {
+    try {
+      const result = await pool.query(
+        `SELECT id, name, description, is_template FROM workouts WHERE is_template = true ORDER BY created_at ASC`
+      );
+      return reply.status(200).send(result.rows);
+    } catch (err) {
+      console.error(err);
+      return reply.status(500).send({ message: 'Erro ao buscar treinos prontos.' });
+    }
+  });
+
+  // 2. Copiar um Treino Pronto para as fichas do Usuário (Editável)
+  app.post('/workouts/templates/:id/copy', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const user_id = request.user?.id;
+
+    if (!user_id) {
+      return reply.status(401).send({ message: 'Usuário não autenticado.' });
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const templateRes = await client.query(
+        'SELECT name, description FROM workouts WHERE id = $1 AND is_template = true',
+        [id]
+      );
+
+      if (templateRes.rows.length === 0) {
+        return reply.status(404).send({ message: 'Treino pronto não encontrado.' });
+      }
+
+      const template = templateRes.rows[0];
+
+      // Cria uma cópia da ficha no perfil do usuário (is_template = false)
+      const newWorkoutRes = await client.query(
+        'INSERT INTO workouts (user_id, name, description, is_template) VALUES ($1, $2, $3, false) RETURNING id',
+        [user_id, template.name, template.description]
+      );
+
+      const newWorkoutId = newWorkoutRes.rows[0].id;
+
+      // Duplica os exercícios associados
+      const exercisesRes = await client.query(
+        'SELECT exercise_id, target_sets, target_reps FROM workout_exercises WHERE workout_id = $1',
+        [id]
+      );
+
+      for (const ex of exercisesRes.rows) {
+        await client.query(
+          'INSERT INTO workout_exercises (workout_id, exercise_id, target_sets, target_reps) VALUES ($1, $2, $3, $4)',
+          [newWorkoutId, ex.exercise_id, ex.target_sets, ex.target_reps]
+        );
+      }
+
+      await client.query('COMMIT');
+      return reply.status(201).send({ workout_id: newWorkoutId, message: 'Treino copiado com sucesso para suas fichas!' });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error(err);
+      return reply.status(500).send({ message: 'Erro ao copiar treino pronto.' });
+    } finally {
+      client.release();
+    }
+  });
+
+  // 3. Listar Divisões Prontas (Aba "Divisões Prontas")
+  app.get('/routines/templates', async (request, reply) => {
+    try {
+      const result = await pool.query(
+        `SELECT id, name, description, category FROM routine_templates ORDER BY created_at ASC`
+      );
+      return reply.status(200).send(result.rows);
+    } catch (err) {
+      console.error(err);
+      return reply.status(500).send({ message: 'Erro ao buscar divisões de treino.' });
+    }
+  });
+
+  // 4. Copiar uma Divisão Pronta Completa para o Usuário
+  app.post('/routines/templates/:id/copy', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const user_id = request.user?.id || (request.user as any)?.sub;
+
+    if (!user_id) {
+      return reply.status(401).send({ message: 'Usuário não autenticado.' });
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // 1. Verifica se a rotina/divisão existe
+      const routineRes = await client.query('SELECT name FROM routine_templates WHERE id = $1', [id]);
+      if (routineRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return reply.status(404).send({ message: 'Divisão não encontrada.' });
+      }
+
+      // Log para debug
+      console.log(`[COPY ROUTINE] Copiando rotina ID: ${id} para usuário ID: ${user_id}`);
+
+      // 2. Busca os treinos da rotina
+      const workoutsRes = await client.query(
+        `
+        SELECT 
+          rtw.day_order, 
+          w.id AS workout_id, 
+          w.name, 
+          w.description
+        FROM routine_template_workouts rtw
+        JOIN workouts w ON w.id = rtw.workout_id
+        WHERE rtw.routine_template_id = $1
+        ORDER BY rtw.day_order ASC
+        `,
+        [id]
+      );
+
+      console.log(`[COPY ROUTINE] Treinos encontrados: ${workoutsRes.rows.length}`);
+
+      if (workoutsRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return reply.status(404).send({ 
+          message: 'Nenhum treino encontrado vinculado a esta divisão no banco de dados.' 
+        });
+      }
+
+      const createdWorkouts = [];
+
+      for (const row of workoutsRes.rows) {
+        const workoutName = `Dia ${row.day_order}: ${row.name}`;
+
+        const newWorkoutRes = await client.query(
+          `INSERT INTO workouts (user_id, name, description, is_template) 
+           VALUES ($1, $2, $3, false) 
+           RETURNING id`,
+          [user_id, workoutName, row.description || '']
+        );
+
+        const newWorkoutId = newWorkoutRes.rows[0].id;
+        createdWorkouts.push(newWorkoutId);
+
+        // Copia os exercícios de cada ficha modelo
+        const exercisesRes = await client.query(
+          'SELECT exercise_id, target_sets, target_reps FROM workout_exercises WHERE workout_id = $1',
+          [row.workout_id]
+        );
+
+        for (const ex of exercisesRes.rows) {
+          await client.query(
+            `INSERT INTO workout_exercises (workout_id, exercise_id, target_sets, target_reps) 
+             VALUES ($1, $2, $3, $4)`,
+            [newWorkoutId, ex.exercise_id, ex.target_sets, ex.target_reps]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+
+      return reply.status(201).send({
+        message: 'Divisão de treino adicionada à sua conta com sucesso!',
+        workouts_created: createdWorkouts.length,
+      });
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('[COPY ROUTINE ERROR]:', err);
+      return reply.status(500).send({ message: 'Erro ao copiar divisão de treinos.' });
+    } finally {
+      client.release();
+    }
+  });
+
+  // ==========================================
   // ROTAS DE EXERCÍCIOS (ISOLADOS POR USUÁRIO)
   // ==========================================
 
-  // Listar Exercícios do Usuário Autenticado
   app.get('/exercises', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
     try {
       const user_id = request.user?.id;
@@ -400,7 +642,6 @@ async function main() {
     }
   });
 
-  // Criar Exercício Privado para o Usuário
   app.post('/exercises', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
     const exerciseSchema = z.object({
       name: z.string().min(1),
@@ -427,7 +668,6 @@ async function main() {
     }
   });
 
-  // Deletar Exercício do Próprio Usuário
   app.delete('/exercises/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const user_id = request.user?.id;
@@ -528,6 +768,68 @@ async function main() {
     }
   });
 
+  // Atualizar Ficha Existente (Editar treino)
+  app.put('/workouts/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const user_id = request.user?.id;
+
+    if (!user_id) {
+      return reply.status(401).send({ message: 'Usuário não autenticado.' });
+    }
+
+    const workoutSchema = z.object({
+      name: z.string().min(1),
+      description: z.string().optional(),
+      exercises: z.array(
+        z.object({
+          exercise_id: z.string().uuid(),
+          target_sets: z.number().int().positive(),
+          target_reps: z.number().int().positive(),
+        })
+      ),
+    });
+
+    const client = await pool.connect();
+
+    try {
+      const { name, description, exercises } = workoutSchema.parse(request.body);
+
+      const checkRes = await client.query('SELECT user_id FROM workouts WHERE id = $1', [id]);
+      if (checkRes.rows.length === 0) {
+        return reply.status(404).send({ message: 'Treino não encontrado.' });
+      }
+
+      if (checkRes.rows[0].user_id !== user_id) {
+        return reply.status(403).send({ message: 'Sem permissão para editar esta ficha.' });
+      }
+
+      await client.query('BEGIN');
+
+      await client.query(
+        'UPDATE workouts SET name = $1, description = $2 WHERE id = $3 AND user_id = $4',
+        [name, description || '', id, user_id]
+      );
+
+      await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
+
+      for (const ex of exercises) {
+        await client.query(
+          'INSERT INTO workout_exercises (workout_id, exercise_id, target_sets, target_reps) VALUES ($1, $2, $3, $4)',
+          [id, ex.exercise_id, ex.target_sets, ex.target_reps]
+        );
+      }
+
+      await client.query('COMMIT');
+      return reply.status(200).send({ message: 'Ficha atualizada com sucesso!' });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error(err);
+      return reply.status(400).send({ message: 'Erro ao atualizar ficha de treino.' });
+    } finally {
+      client.release();
+    }
+  });
+
   app.get('/workouts/:id/active', async (request, reply) => {
     const { id } = request.params as { id: string };
 
@@ -589,6 +891,7 @@ async function main() {
     }
   });
 
+  // Retorna os treinos do próprio usuário na tela principal
   app.get('/workouts', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
     try {
       const user_id = request.user?.id;
@@ -600,14 +903,10 @@ async function main() {
       const result = await pool.query(
         `
         SELECT 
-          id, 
-          name, 
-          COALESCE(description, '') AS description, 
-          COALESCE(is_template, false) AS is_template,
-          user_id
+          *
         FROM workouts 
-        WHERE is_template = true OR user_id = $1
-        ORDER BY name ASC
+        WHERE user_id = $1 AND (is_template = false OR is_template IS NULL)
+        ORDER BY created_at DESC
         `,
         [user_id]
       );
@@ -645,10 +944,6 @@ async function main() {
 
       const workout = workoutCheck.rows[0];
 
-      if (workout.is_template) {
-        return reply.status(403).send({ message: 'Não é permitido deletar fichas modelos.' });
-      }
-
       if (workout.user_id !== user_id) {
         return reply.status(403).send({ message: 'Você não tem permissão para deletar esta ficha.' });
       }
@@ -663,7 +958,6 @@ async function main() {
 
       await client.query('DELETE FROM workout_logs WHERE workout_id = $1', [id]);
       await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
-
       await client.query('DELETE FROM workouts WHERE id = $1', [id]);
 
       await client.query('COMMIT');
