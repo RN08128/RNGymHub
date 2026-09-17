@@ -1,4 +1,4 @@
-import { pool } from './connection.ts';
+import pool from './connection.ts';
 
 async function seed() {
   const client = await pool.connect();

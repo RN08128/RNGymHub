@@ -213,16 +213,6 @@ async function copyRoutineTemplate(routineId, routineName) {
   }
 }
 
-  // Identifica o botão correto pelo onclick ou pela ordem das abas
-  if (currentTab === 'custom') {
-    buttons[0]?.classList.add('active');
-  } else if (currentTab === 'templates') {
-    buttons[1]?.classList.add('active');
-  } else if (currentTab === 'routines') {
-    buttons[2]?.classList.add('active');
-  }
-}
-
 // Redireciona para edição
 function editWorkout(workoutId) {
   window.location.href = `create-workout.html?id=${workoutId}`;
