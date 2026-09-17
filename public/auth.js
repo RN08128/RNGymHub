@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:3333';
+const API_URL = 'https://rngymhub-api.onrender.com';
 let registeredEmailPending = '';
 
 function switchAuthTab(tab) {

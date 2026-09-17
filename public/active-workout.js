@@ -1,5 +1,4 @@
-window.API_URL = window.API_URL || 'http://localhost:3333';
-var API_URL = window.API_URL;
+const API_URL = 'https://rngymhub-api.onrender.com';
 
 let workoutData = null;
 let startTime = new Date().toISOString();

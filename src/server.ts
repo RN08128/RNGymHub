@@ -255,6 +255,10 @@ async function main() {
 
   await runMigrations();
 
+  app.get('/', async (request, reply) => {
+    return { status: 'ok', message: 'RNGymHub API running!' };
+  });
+
   app.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       await request.jwtVerify();
@@ -262,6 +266,7 @@ async function main() {
       return reply.status(401).send({ message: 'Token inválido ou ausente.' });
     }
   });
+
 
   // ==========================================
   // ROTAS DE AUTENTICAÇÃO E CADASTRO
@@ -567,8 +572,8 @@ async function main() {
 
       if (workoutsRes.rows.length === 0) {
         await client.query('ROLLBACK');
-        return reply.status(404).send({ 
-          message: 'Nenhum treino encontrado vinculado a esta divisão no banco de dados.' 
+        return reply.status(404).send({
+          message: 'Nenhum treino encontrado vinculado a esta divisão no banco de dados.'
         });
       }
 
