@@ -1,5 +1,6 @@
-const API_URL = 'https://rngymhub-api.onrender.com';
-
+// Substitua pela sua URL exata gerada no Render
+window.API_URL = window.API_URL || 'https://rngymhub-api.onrender.com';
+var API_URL = window.API_URL;
 
 let chartInstance = null;
 
