@@ -248,7 +248,13 @@ async function main() {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
-    strictPreflight: false
+    strictPreflight: false,
+    optionsSuccessStatus: 204
+  });
+
+  // Adicione isto logo após registrar o CORS para capturar qualquer preflight solto
+  app.options('*', async (request, reply) => {
+    return reply.status(204).send();
   });
 
   await app.register(fastifyJwt, {
