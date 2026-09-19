@@ -256,11 +256,16 @@ async function main() {
     secret: process.env.JWT_SECRET,
   });
 
-  await runMigrations();
-
   app.get('/', async (request, reply) => {
     return { status: 'ok', message: 'RNGymHub API running!' };
   });
+
+  try {
+    await runMigrations();
+  } catch (error) {
+    console.error('❌ Erro ao executar migrações:', error);
+    process.exit(1);
+  }
 
   app.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
