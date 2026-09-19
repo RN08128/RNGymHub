@@ -249,12 +249,7 @@ async function main() {
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
     strictPreflight: false,
-    optionsSuccessStatus: 204
-  });
-
-  // Adicione isto logo após registrar o CORS para capturar qualquer preflight solto
-  app.options('*', async (request, reply) => {
-    return reply.status(204).send();
+    optionsSuccessStatus: 204,
   });
 
   await app.register(fastifyJwt, {
@@ -1098,15 +1093,25 @@ async function main() {
     }
   });
 
-  // Inicialização do Servidor
-  app.listen({ port: 3333, host: '0.0.0.0' }, (err, address) => {
-    if (err) {
-      console.error(err);
-      process.exit(1);
-    }
-    console.log(`🚀 Servidor rodando em ${address}`);
+  app.setNotFoundHandler((request, reply) => {
+    reply
+      .header('Access-Control-Allow-Origin', '*')
+      .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
+      .header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+      .status(404)
+      .send({ message: 'Rota não encontrada.' });
   });
-}
+
+  // Inicialização do Servidor
+const PORT = Number(process.env.PORT) || 3333;
+
+app.listen({ port: PORT, host: '0.0.0.0' }, (err, address) => {
+  if (err) {
+    console.error(err);
+    process.exit(1);
+  }
+  console.log(`🚀 Servidor rodando em ${address}`);
+});
 
 // Executa a aplicação
 main();
