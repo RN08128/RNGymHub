@@ -1,5 +1,5 @@
 // Substitua pela sua URL exata gerada no Render
-window.API_URL = window.API_URL || 'https://rngymhub-api.onrender.com';
+window.API_URL = window.API_URL || 'https://rngymhub.onrender.com/auth/login';
 var API_URL = window.API_URL;
 let availableExercises = [];
 let selectedExercises = [];
