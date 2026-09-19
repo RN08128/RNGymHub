@@ -1103,15 +1103,15 @@ async function main() {
   });
 
   // Inicialização do Servidor
-const PORT = Number(process.env.PORT) || 3333;
+  const PORT = Number(process.env.PORT) || 3333;
 
-app.listen({ port: PORT, host: '0.0.0.0' }, (err, address) => {
-  if (err) {
-    console.error(err);
-    process.exit(1);
-  }
-  console.log(`🚀 Servidor rodando em ${address}`);
-});
-
+  app.listen({ port: PORT, host: '0.0.0.0' }, (err, address) => {
+    if (err) {
+      console.error(err);
+      process.exit(1);
+    }
+    console.log(`🚀 Servidor rodando em ${address}`);
+  });
+}
 // Executa a aplicação
 main();
