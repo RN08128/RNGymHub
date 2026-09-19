@@ -252,6 +252,15 @@ async function main() {
     optionsSuccessStatus: 204,
   });
 
+  app.setNotFoundHandler((request, reply) => {
+    reply
+      .header('Access-Control-Allow-Origin', '*')
+      .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
+      .header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+      .status(404)
+      .send({ message: 'Rota não encontrada.' });
+  });
+
   await app.register(fastifyJwt, {
     secret: process.env.JWT_SECRET,
   });
@@ -1098,14 +1107,7 @@ async function main() {
     }
   });
 
-  app.setNotFoundHandler((request, reply) => {
-    reply
-      .header('Access-Control-Allow-Origin', '*')
-      .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
-      .header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-      .status(404)
-      .send({ message: 'Rota não encontrada.' });
-  });
+
 
   // Inicialização do Servidor
   const PORT = Number(process.env.PORT) || 3333;
