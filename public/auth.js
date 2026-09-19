@@ -1,5 +1,5 @@
 // Substitua pela sua URL exata gerada no Render
-window.API_URL = window.API_URL || 'https://rngymhub.onrender.com/auth/login';
+window.API_URL = window.API_URL || 'https://rngymhub.onrender.com';
 var API_URL = window.API_URL;
 let registeredEmailPending = '';
 
