@@ -1,3 +1,6 @@
+import { dotenv } from 'dotenv';
+dotenv.config();
+
 var API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://rngymhub.onrender.com';
 let registeredEmailPending = '';
 
