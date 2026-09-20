@@ -1,6 +1,4 @@
-// Substitua pela sua URL exata gerada no Render
-window.API_URL = window.API_URL || 'https://rngymhub.onrender.com';
-var API_URL = window.API_URL;
+var API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://rngymhub.onrender.com';
 
 let workoutData = null;
 let startTime = new Date().toISOString();
