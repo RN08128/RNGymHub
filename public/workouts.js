@@ -1,4 +1,4 @@
-var API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://rngymhub.onrender.com';
+var API_URL = 'https://rngymhub.onrender.com';
 
 let currentTab = 'custom'; // 'custom', 'templates' ou 'routines'
 
