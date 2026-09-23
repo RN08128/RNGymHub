@@ -19,9 +19,7 @@ const pool = new Pool({
 
 // Configuração do Transporter do Nodemailer para envio de e-mails
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-  port: Number(process.env.EMAIL_PORT) || 465,
-  secure: true, // true para 465, false para outras portas
+  service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -361,8 +359,9 @@ async function main() {
           </div>
         `,
       });
-    } catch (emailError) {
-      console.error('AVISO: Falha no disparo do SMTP (E-mail não enviado):', emailError.message);
+    } catch (emailError: unknown) {
+      const errorMessage = emailError instanceof Error ? emailError.message : String(emailError);
+      console.error('AVISO: Falha no disparo do SMTP (E-mail não enviado):', errorMessage);
     }
 
     return reply.status(200).send({
