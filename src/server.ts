@@ -1053,7 +1053,6 @@ app.post('/auth/login', async (request, reply) => {
     inTransaction = true;
 
     // 3. Deleta os registros dependentes nas tabelas existentes
-    await client.query('DELETE FROM workout_logs WHERE workout_id = $1', [id]);
     await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
     await client.query('DELETE FROM workouts WHERE id = $1 AND user_id = $2', [id, user_id]);
 
