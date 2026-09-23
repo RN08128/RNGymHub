@@ -523,60 +523,79 @@ app.post('/auth/login', async (request, reply) => {
 
   // 2. Copiar um Treino Pronto para as fichas do Usuário (Editável)
   app.post('/workouts/templates/:id/copy', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const user_id = request.user?.id;
+  const { id } = request.params as { id: string };
+  const user_id = request.user?.id;
 
-    if (!user_id) {
-      return reply.status(401).send({ message: 'Usuário não autenticado.' });
+  if (!user_id) {
+    return reply.status(401).send({ message: 'Usuário não autenticado.' });
+  }
+
+  if (!z.string().uuid().safeParse(id).success) {
+    return reply.status(400).send({ message: 'ID de treino inválido.' });
+  }
+
+  const client = await pool.connect();
+  let inTransaction = false;
+
+  try {
+    // 1. Busca o modelo ANTES de iniciar a transação no banco
+    const templateRes = await client.query(
+      'SELECT name, description FROM workouts WHERE id = $1 AND is_template = true',
+      [id]
+    );
+
+    if (templateRes.rows.length === 0) {
+      return reply.status(404).send({ message: 'Treino pronto não encontrado.' });
     }
 
-    const client = await pool.connect();
+    const template = templateRes.rows[0];
 
-    try {
-      await client.query('BEGIN');
+    // 2. Inicia a transação
+    await client.query('BEGIN');
+    inTransaction = true;
 
-      const templateRes = await client.query(
-        'SELECT name, description FROM workouts WHERE id = $1 AND is_template = true',
-        [id]
+    // 3. Cria a cópia do treino para o usuário
+    const newWorkoutRes = await client.query(
+      'INSERT INTO workouts (user_id, name, description, is_template) VALUES ($1, $2, $3, false) RETURNING id',
+      [user_id, template.name, template.description]
+    );
+
+    const newWorkoutId = newWorkoutRes.rows[0].id;
+
+    // 4. Copia os exercícios associados usando as colunas corretas (sets e reps)
+    const exercisesRes = await client.query(
+      'SELECT exercise_id, sets, reps, weight FROM workout_exercises WHERE workout_id = $1',
+      [id]
+    );
+
+    for (const ex of exercisesRes.rows) {
+      await client.query(
+        'INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight) VALUES ($1, $2, $3, $4, $5)',
+        [newWorkoutId, ex.exercise_id, ex.sets, ex.reps, ex.weight || 0]
       );
-
-      if (templateRes.rows.length === 0) {
-        return reply.status(404).send({ message: 'Treino pronto não encontrado.' });
-      }
-
-      const template = templateRes.rows[0];
-
-      // Cria uma cópia da ficha no perfil do usuário (is_template = false)
-      const newWorkoutRes = await client.query(
-        'INSERT INTO workouts (user_id, name, description, is_template) VALUES ($1, $2, $3, false) RETURNING id',
-        [user_id, template.name, template.description]
-      );
-
-      const newWorkoutId = newWorkoutRes.rows[0].id;
-
-      // Duplica os exercícios associados
-      const exercisesRes = await client.query(
-        'SELECT exercise_id, target_sets, target_reps FROM workout_exercises WHERE workout_id = $1',
-        [id]
-      );
-
-      for (const ex of exercisesRes.rows) {
-        await client.query(
-          'INSERT INTO workout_exercises (workout_id, exercise_id, target_sets, target_reps) VALUES ($1, $2, $3, $4)',
-          [newWorkoutId, ex.exercise_id, ex.target_sets, ex.target_reps]
-        );
-      }
-
-      await client.query('COMMIT');
-      return reply.status(201).send({ workout_id: newWorkoutId, message: 'Treino copiado com sucesso para suas fichas!' });
-    } catch (err) {
-      await client.query('ROLLBACK');
-      console.error(err);
-      return reply.status(500).send({ message: 'Erro ao copiar treino pronto.' });
-    } finally {
-      client.release();
     }
-  });
+
+    await client.query('COMMIT');
+    inTransaction = false;
+
+    return reply.status(201).send({
+      workout_id: newWorkoutId,
+      message: 'Treino copiado com sucesso para suas fichas!'
+    });
+
+  } catch (err) {
+    if (inTransaction) {
+      await client.query('ROLLBACK').catch(() => {});
+    }
+    console.error('Erro ao copiar treino pronto:', err);
+    return reply.status(500).send({
+      message: 'Erro ao copiar treino pronto.',
+      error: err instanceof Error ? err.message : String(err)
+    });
+  } finally {
+    client.release();
+  }
+});
 
   // 3. Listar Divisões Prontas (Aba "Divisões Prontas")
   app.get('/routines/templates', async (request, reply) => {
