@@ -288,7 +288,7 @@ async function main() {
   // ROTAS DE AUTENTICAÇÃO E CADASTRO
   // ==========================================
 
-  app.post('/auth/register-request', async (request, reply) => {
+app.post('/auth/register-request', async (request, reply) => {
   const registerSchema = z.object({
     name: z.string().min(3),
     email: z.string().email(),
@@ -339,33 +339,32 @@ async function main() {
       );
     }
 
-    // 3. Exibe o código no log do servidor para testes (caso o SMTP falhe)
+    // 3. Exibe o código no log do servidor para testes
     console.log(`[AUTH LOG] Código gerado para ${email}: ${verification_code}`);
 
-    // 4. Envia o e-mail em um bloco isolado para que falhas de SMTP não travem a resposta HTTP
-    try {
-       transporter.sendMail({
-        from: `"RNGymHub" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: 'Seu Código de Verificação - RNGymHub',
-        html: `
-          <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #121212; color: #ffffff; border-radius: 8px;">
-            <h2 style="color: #007bff;">Bem-vindo ao RNGymHub, ${name}!</h2>
-            <p>Para concluir a verificação da sua conta, utilize o código de verificação abaixo:</p>
-            <div style="background: #1e1e1e; font-size: 28px; font-weight: bold; letter-spacing: 5px; color: #007bff; padding: 15px; text-align: center; border-radius: 6px; margin: 20px 0;">
-              ${verification_code}
-            </div>
-            <p style="color: #aaaaaa; font-size: 13px;">Este código expira em 15 minutos.</p>
+    // 4. Disparo do e-mail em segundo plano com tratamento de erro na Promise (.catch)
+    transporter.sendMail({
+      from: `"RNGymHub" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Seu Código de Verificação - RNGymHub',
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #121212; color: #ffffff; border-radius: 8px;">
+          <h2 style="color: #007bff;">Bem-vindo ao RNGymHub, ${name}!</h2>
+          <p>Para concluir a verificação da sua conta, utilize o código de verificação abaixo:</p>
+          <div style="background: #1e1e1e; font-size: 28px; font-weight: bold; letter-spacing: 5px; color: #007bff; padding: 15px; text-align: center; border-radius: 6px; margin: 20px 0;">
+            ${verification_code}
           </div>
-        `,
-      });
-    } catch (emailError: unknown) {
+          <p style="color: #aaaaaa; font-size: 13px;">Este código expira em 15 minutos.</p>
+        </div>
+      `,
+    }).catch((emailError) => {
       const errorMessage = emailError instanceof Error ? emailError.message : String(emailError);
       console.error('AVISO: Falha no disparo do SMTP (E-mail não enviado):', errorMessage);
-    }
+    });
 
+    // 5. Retorno imediato
     return reply.status(200).send({
-      message: 'Código de verificação gerado e enviado para o seu e-mail!',
+      message: 'Código de verificação gerado com sucesso!',
       email,
     });
   } catch (err) {
@@ -373,7 +372,6 @@ async function main() {
     return reply.status(400).send({ message: 'Erro ao solicitar cadastro. Verifique os dados fornecidos.' });
   }
 });
-
 app.post('/auth/verify-code', async (request, reply) => {
   const verifySchema = z.object({
     email: z.string().email(),
