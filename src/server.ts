@@ -598,113 +598,138 @@ app.post('/auth/login', async (request, reply) => {
 });
 
   // 3. Listar Divisões Prontas (Aba "Divisões Prontas")
-  app.get('/routines/templates', async (request, reply) => {
-    try {
-      const result = await pool.query(
-        `SELECT id, name, description, category FROM routine_templates ORDER BY created_at ASC`
-      );
-      return reply.status(200).send(result.rows);
-    } catch (err) {
-      console.error(err);
-      return reply.status(500).send({ message: 'Erro ao buscar divisões de treino.' });
-    }
-  });
+ app.get('/routines/templates', async (request, reply) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT 
+        rt.id, 
+        rt.name, 
+        rt.description, 
+        rt.category,
+        COUNT(rtw.workout_id)::int AS workouts_count
+      FROM routine_templates rt
+      LEFT JOIN routine_template_workouts rtw ON rtw.routine_template_id = rt.id
+      GROUP BY rt.id
+      ORDER BY rt.name ASC
+      `
+    );
+
+    return reply.status(200).send(result.rows);
+  } catch (err) {
+    console.error('Erro ao buscar divisões de treino:', err);
+    return reply.status(500).send({ 
+      message: 'Erro ao buscar divisões de treino.',
+      error: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
 
   // 4. Copiar uma Divisão Pronta Completa para o Usuário
   app.post('/routines/templates/:id/copy', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const user_id = request.user?.id || (request.user as any)?.sub;
+  const { id } = request.params as { id: string };
+  const user_id = request.user?.id || (request.user as any)?.sub;
 
-    if (!user_id) {
-      return reply.status(401).send({ message: 'Usuário não autenticado.' });
+  if (!user_id) {
+    return reply.status(401).send({ message: 'Usuário não autenticado.' });
+  }
+
+  // Validação do formato do UUID
+  if (!z.string().uuid().safeParse(id).success) {
+    return reply.status(400).send({ message: 'ID de divisão inválido.' });
+  }
+
+  const client = await pool.connect();
+  let inTransaction = false;
+
+  try {
+    // 1. Verifica se a rotina/divisão existe antes de abrir transação
+    const routineRes = await client.query('SELECT name FROM routine_templates WHERE id = $1', [id]);
+    if (routineRes.rows.length === 0) {
+      return reply.status(404).send({ message: 'Divisão não encontrada.' });
     }
 
-    const client = await pool.connect();
+    console.log(`[COPY ROUTINE] Copiando rotina ID: ${id} para usuário ID: ${user_id}`);
 
-    try {
-      await client.query('BEGIN');
+    // 2. Busca os treinos da rotina
+    const workoutsRes = await client.query(
+      `
+      SELECT 
+        rtw.day_order, 
+        w.id AS workout_id, 
+        w.name, 
+        w.description
+      FROM routine_template_workouts rtw
+      JOIN workouts w ON w.id = rtw.workout_id
+      WHERE rtw.routine_template_id = $1
+      ORDER BY rtw.day_order ASC
+      `,
+      [id]
+    );
 
-      // 1. Verifica se a rotina/divisão existe
-      const routineRes = await client.query('SELECT name FROM routine_templates WHERE id = $1', [id]);
-      if (routineRes.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return reply.status(404).send({ message: 'Divisão não encontrada.' });
-      }
+    console.log(`[COPY ROUTINE] Treinos encontrados: ${workoutsRes.rows.length}`);
 
-      // Log para debug
-      console.log(`[COPY ROUTINE] Copiando rotina ID: ${id} para usuário ID: ${user_id}`);
+    if (workoutsRes.rows.length === 0) {
+      return reply.status(404).send({
+        message: 'Nenhum treino encontrado vinculado a esta divisão no banco de dados.'
+      });
+    }
 
-      // 2. Busca os treinos da rotina
-      const workoutsRes = await client.query(
-        `
-        SELECT 
-          rtw.day_order, 
-          w.id AS workout_id, 
-          w.name, 
-          w.description
-        FROM routine_template_workouts rtw
-        JOIN workouts w ON w.id = rtw.workout_id
-        WHERE rtw.routine_template_id = $1
-        ORDER BY rtw.day_order ASC
-        `,
-        [id]
+    // 3. Inicia transação no banco
+    await client.query('BEGIN');
+    inTransaction = true;
+
+    const createdWorkouts = [];
+
+    for (const row of workoutsRes.rows) {
+      const workoutName = `Dia ${row.day_order}: ${row.name}`;
+
+      const newWorkoutRes = await client.query(
+        `INSERT INTO workouts (user_id, name, description, is_template) 
+         VALUES ($1, $2, $3, false) 
+         RETURNING id`,
+        [user_id, workoutName, row.description || '']
       );
 
-      console.log(`[COPY ROUTINE] Treinos encontrados: ${workoutsRes.rows.length}`);
+      const newWorkoutId = newWorkoutRes.rows[0].id;
+      createdWorkouts.push(newWorkoutId);
 
-      if (workoutsRes.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return reply.status(404).send({
-          message: 'Nenhum treino encontrado vinculado a esta divisão no banco de dados.'
-        });
-      }
+      // 4. Copia os exercícios ajustado para as colunas reais (sets, reps, weight)
+      const exercisesRes = await client.query(
+        'SELECT exercise_id, sets, reps, weight FROM workout_exercises WHERE workout_id = $1',
+        [row.workout_id]
+      );
 
-      const createdWorkouts = [];
-
-      for (const row of workoutsRes.rows) {
-        const workoutName = `Dia ${row.day_order}: ${row.name}`;
-
-        const newWorkoutRes = await client.query(
-          `INSERT INTO workouts (user_id, name, description, is_template) 
-           VALUES ($1, $2, $3, false) 
-           RETURNING id`,
-          [user_id, workoutName, row.description || '']
+      for (const ex of exercisesRes.rows) {
+        await client.query(
+          `INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight) 
+           VALUES ($1, $2, $3, $4, $5)`,
+          [newWorkoutId, ex.exercise_id, ex.sets, ex.reps, ex.weight || 0]
         );
-
-        const newWorkoutId = newWorkoutRes.rows[0].id;
-        createdWorkouts.push(newWorkoutId);
-
-        // Copia os exercícios de cada ficha modelo
-        const exercisesRes = await client.query(
-          'SELECT exercise_id, target_sets, target_reps FROM workout_exercises WHERE workout_id = $1',
-          [row.workout_id]
-        );
-
-        for (const ex of exercisesRes.rows) {
-          await client.query(
-            `INSERT INTO workout_exercises (workout_id, exercise_id, target_sets, target_reps) 
-             VALUES ($1, $2, $3, $4)`,
-            [newWorkoutId, ex.exercise_id, ex.target_sets, ex.target_reps]
-          );
-        }
       }
-
-      await client.query('COMMIT');
-
-      return reply.status(201).send({
-        message: 'Divisão de treino adicionada à sua conta com sucesso!',
-        workouts_created: createdWorkouts.length,
-      });
-
-    } catch (err) {
-      await client.query('ROLLBACK');
-      console.error('[COPY ROUTINE ERROR]:', err);
-      return reply.status(500).send({ message: 'Erro ao copiar divisão de treinos.' });
-    } finally {
-      client.release();
     }
-  });
 
+    await client.query('COMMIT');
+    inTransaction = false;
+
+    return reply.status(201).send({
+      message: 'Divisão de treino adicionada à sua conta com sucesso!',
+      workouts_created: createdWorkouts.length,
+    });
+
+  } catch (err) {
+    if (inTransaction) {
+      await client.query('ROLLBACK').catch(() => {});
+    }
+    console.error('[COPY ROUTINE ERROR]:', err);
+    return reply.status(500).send({ 
+      message: 'Erro ao copiar divisão de treinos.',
+      error: err instanceof Error ? err.message : String(err)
+    });
+  } finally {
+    client.release();
+  }
+});
   // ==========================================
   // ROTAS DE EXERCÍCIOS (ISOLADOS POR USUÁRIO)
   // ==========================================
