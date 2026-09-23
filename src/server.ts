@@ -20,12 +20,13 @@ const pool = new Pool({
 // Configuração do Transporter do Nodemailer para envio de e-mails
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-  port: Number(process.env.EMAIL_PORT) || 587,
-  secure: false,
+  port: Number(process.env.EMAIL_PORT) || 465,
+  secure: true, // true para 465, false para outras portas
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  connectionTimeout: 10000,
 });
 
 // Declaração de tipos para o payload do JWT na Request
