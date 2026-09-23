@@ -1048,17 +1048,11 @@ app.post('/auth/login', async (request, reply) => {
       return reply.status(403).send({ message: 'Você não tem permissão para deletar esta ficha.' });
     }
 
-    // 2. Inicia a transação com flag de controle
+    // 2. Inicia a transação
     await client.query('BEGIN');
     inTransaction = true;
 
-    // 3. Deleta em ordem hierárquica (filhos -> pais)
-    await client.query(
-      `DELETE FROM set_logs 
-       WHERE workout_log_id IN (SELECT id FROM workout_logs WHERE workout_id = $1)`,
-      [id]
-    );
-
+    // 3. Deleta os registros dependentes nas tabelas existentes
     await client.query('DELETE FROM workout_logs WHERE workout_id = $1', [id]);
     await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
     await client.query('DELETE FROM workouts WHERE id = $1 AND user_id = $2', [id, user_id]);
