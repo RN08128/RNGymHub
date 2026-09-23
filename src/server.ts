@@ -788,11 +788,11 @@ app.post('/auth/login', async (request, reply) => {
   app.post('/workouts', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
   // Schema flexível e compatível com o schema da tabela workout_exercises
   const workoutSchema = z.object({
-    name: z.string().min(1, 'O nome do treino é obrigatório.'),
+    name: z.string().min(1, { message: 'O nome do treino é obrigatório.' }),
     description: z.string().optional().nullable(),
     exercises: z.array(
       z.object({
-        exercise_id: z.string().uuid('ID de exercício inválido.'),
+        exercise_id: z.string().uuid({ message: 'ID de exercício inválido.' }),
         sets: z.number().int().positive().optional().default(3),
         reps: z.number().int().positive().optional().default(10),
         weight: z.number().nonnegative().optional().default(0),
@@ -851,10 +851,10 @@ app.post('/auth/login', async (request, reply) => {
 
     // Se o erro for de validação de dados (Zod)
     if (err instanceof z.ZodError) {
-      console.error('Erro de validação do Zod ao criar treino:', err.errors);
+      console.error('Erro de validação do Zod ao criar treino:', err.issues);
       return reply.status(400).send({ 
         message: 'Dados do treino inválidos.', 
-        details: err.errors 
+        details: err.issues 
       });
     }
 
