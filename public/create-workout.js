@@ -2,16 +2,30 @@ var API_URL = 'https://rngymhub.onrender.com';
 let availableExercises = [];
 let selectedExercises = [];
 
+// Captura o ID do treino se estiver no modo de edição
+const urlParams = new URLSearchParams(window.location.search);
+const editingWorkoutId = urlParams.get('id');
+
 // Helper para obter os headers padrões com autenticação JWT
 function getAuthHeaders() {
-  const token = localStorage.getItem('@RNGymHub:token');
+  let token = localStorage.getItem('@RNGymHub:token');
+
+  if (token) {
+    try {
+      const parsed = JSON.parse(token);
+      token = Array.isArray(parsed) ? parsed.join('.') : parsed;
+    } catch (e) {
+      // Se já for string pura, segue normal
+    }
+  }
+
   return {
     'Content-Type': 'application/json',
-    'Authorization': token ? `Bearer ${token}` : ''
+    'Authorization': token ? `Bearer ${token.replace(/"/g, '')}` : ''
   };
 }
 
-// 1. Carregar lista de exercícios
+// 1. Carregar lista de exercícios disponíveis
 async function fetchExercises() {
   try {
     const res = await fetch(`${API_URL}/exercises`, {
@@ -21,20 +35,57 @@ async function fetchExercises() {
 
     const select = document.getElementById('select-exercise');
 
-    if (availableExercises.length === 0) {
+    if (!availableExercises || availableExercises.length === 0) {
       select.innerHTML = '<option value="">Nenhum exercício cadastrado</option>';
       return;
     }
 
     select.innerHTML = availableExercises.map(ex =>
-      `<option value="${ex.id}">${ex.name} (${ex.target_muscle})</option>`
+      `<option value="${ex.id}">${ex.name} (${ex.target_muscle || 'Geral'})</option>`
     ).join('');
   } catch (err) {
     console.error('Erro ao buscar exercícios:', err);
   }
 }
 
-// 2. Deletar exercício do banco
+// 2. Se for EDIÇÃO, busca os dados da ficha no backend e preenche os campos
+async function loadWorkoutForEdit() {
+  if (!editingWorkoutId) return;
+
+  // Atualiza título/botão na tela se existirem
+  const pageTitle = document.querySelector('h1, .page-title');
+  if (pageTitle) pageTitle.textContent = 'Editar Ficha de Treino';
+
+  try {
+    const res = await fetch(`${API_URL}/workouts/${editingWorkoutId}`, {
+      headers: getAuthHeaders()
+    });
+
+    if (!res.ok) throw new Error('Erro ao buscar dados do treino');
+
+    const workout = await res.json();
+
+    // Preenche os campos de texto
+    document.getElementById('workout-name').value = workout.name || '';
+    document.getElementById('workout-desc').value = workout.description || '';
+
+    // Preenche a lista de exercícios
+    if (workout.exercises && Array.isArray(workout.exercises)) {
+      selectedExercises = workout.exercises.map(ex => ({
+        exercise_id: ex.exercise_id || ex.id,
+        name: ex.name,
+        target_sets: ex.target_sets || ex.sets || 3,
+        target_reps: ex.target_reps || ex.reps || 10
+      }));
+      renderSelected();
+    }
+  } catch (err) {
+    console.error('Erro ao carregar treino para edição:', err);
+    alert('Erro ao carregar os dados da ficha para edição.');
+  }
+}
+
+// 3. Deletar exercício do banco
 async function deleteSelectedExercise() {
   const select = document.getElementById('select-exercise');
   const exerciseId = select.value;
@@ -52,8 +103,7 @@ async function deleteSelectedExercise() {
   try {
     const res = await fetch(`${API_URL}/exercises/${exerciseId}`, {
       method: 'DELETE',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ exerciseId }) // Envia o ID do exercício no corpo da requisição
+      headers: getAuthHeaders()
     });
 
     if (res.ok) {
@@ -62,7 +112,7 @@ async function deleteSelectedExercise() {
       renderSelected();
       await fetchExercises();
     } else {
-      const err = await res.json();
+      const err = await res.json().catch(() => ({}));
       alert(err.message || 'Erro ao deletar exercício.');
     }
   } catch (error) {
@@ -71,7 +121,7 @@ async function deleteSelectedExercise() {
   }
 }
 
-// 3. Adicionar exercício à lista da ficha
+// 4. Adicionar exercício à lista da ficha
 function addExerciseToState() {
   const select = document.getElementById('select-exercise');
   if (!select.value) return alert('Cadastre ou selecione um exercício primeiro!');
@@ -96,7 +146,7 @@ function addExerciseToState() {
   renderSelected();
 }
 
-// 4. Renderizar exercícios adicionados
+// 5. Renderizar exercícios adicionados
 function renderSelected() {
   const list = document.getElementById('added-list');
   if (selectedExercises.length === 0) {
@@ -120,7 +170,7 @@ function removeExercise(index) {
   renderSelected();
 }
 
-// 5. Cadastrar Novo Exercício via Modal
+// 6. Cadastrar Novo Exercício via Modal
 async function createNewExercise() {
   const name = document.getElementById('new-ex-name').value;
   const target_muscle = document.getElementById('new-ex-muscle').value;
@@ -149,12 +199,12 @@ async function createNewExercise() {
   }
 }
 
-// 6. Salvar Ficha (com suporte para "Apenas Salvar" ou "Salvar e Iniciar")
+// 7. Salvar Ficha (Criação com POST ou Atualização com PUT)
 async function saveWorkout(startImmediately = false) {
   const token = localStorage.getItem('@RNGymHub:token');
 
   if (!token) {
-    alert('Sessão expirada ou não iniciada. Por favor, faça login novamente.');
+    alert('Sessão expirada. Por favor, faça login novamente.');
     window.location.href = 'auth.html';
     return;
   }
@@ -167,7 +217,6 @@ async function saveWorkout(startImmediately = false) {
     return;
   }
 
-  // Removido o user_id do payload (o backend agora pega do JWT)
   const payload = {
     name,
     description,
@@ -178,20 +227,26 @@ async function saveWorkout(startImmediately = false) {
     }))
   };
 
+  // Se tiver ID na URL faz PUT (editar), caso contrário faz POST (criar)
+  const isEditing = Boolean(editingWorkoutId);
+  const endpoint = isEditing ? `${API_URL}/workouts/${editingWorkoutId}` : `${API_URL}/workouts`;
+  const method = isEditing ? 'PUT' : 'POST';
+
   try {
-    const res = await fetch(`${API_URL}/workouts`, {
-      method: 'POST',
+    const res = await fetch(endpoint, {
+      method: method,
       headers: getAuthHeaders(),
       body: JSON.stringify(payload)
     });
 
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
 
     if (res.ok) {
       if (startImmediately) {
-        window.location.href = `active-workout.html?id=${data.workout_id}`;
+        const targetId = isEditing ? editingWorkoutId : data.workout_id;
+        window.location.href = `active-workout.html?id=${targetId}`;
       } else {
-        alert('🎉 Ficha criada com sucesso!');
+        alert(isEditing ? '🎉 Ficha atualizada com sucesso!' : '🎉 Ficha criada com sucesso!');
         window.location.href = 'workouts.html';
       }
     } else {
@@ -212,5 +267,10 @@ function toggleModal(show) {
   document.getElementById('ex-modal').style.display = show ? 'flex' : 'none';
 }
 
-// Inicializa a busca de exercícios
-fetchExercises();
+// Inicialização: carrega exercícios e, se houver ID, carrega os dados da ficha
+document.addEventListener('DOMContentLoaded', async () => {
+  await fetchExercises();
+  if (editingWorkoutId) {
+    await loadWorkoutForEdit();
+  }
+});
