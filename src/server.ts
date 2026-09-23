@@ -786,55 +786,84 @@ app.post('/auth/login', async (request, reply) => {
   // ==========================================
 
   app.post('/workouts', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-    const workoutSchema = z.object({
-      name: z.string().min(1),
-      description: z.string().optional(),
-      exercises: z.array(
-        z.object({
-          exercise_id: z.string().uuid(),
-          target_sets: z.number().int().positive(),
-          target_reps: z.number().int().positive(),
-        })
-      ),
-    });
+  // Schema flexível e compatível com o schema da tabela workout_exercises
+  const workoutSchema = z.object({
+    name: z.string().min(1, 'O nome do treino é obrigatório.'),
+    description: z.string().optional().nullable(),
+    exercises: z.array(
+      z.object({
+        exercise_id: z.string().uuid('ID de exercício inválido.'),
+        sets: z.number().int().positive().optional().default(3),
+        reps: z.number().int().positive().optional().default(10),
+        weight: z.number().nonnegative().optional().default(0),
+      })
+    ).optional().default([]),
+  });
 
-    const client = await pool.connect();
+  const client = await pool.connect();
 
-    try {
-      const user_id = request.user?.id;
+  try {
+    const user_id = request.user?.id;
 
-      if (!user_id) {
-        return reply.status(401).send({ message: 'Usuário não autenticado.' });
-      }
+    if (!user_id) {
+      return reply.status(401).send({ message: 'Usuário não autenticado.' });
+    }
 
-      const { name, description, exercises } = workoutSchema.parse(request.body);
+    const { name, description, exercises } = workoutSchema.parse(request.body);
 
-      await client.query('BEGIN');
+    await client.query('BEGIN');
 
-      const workoutRes = await client.query(
-        'INSERT INTO workouts (user_id, name, description, is_template) VALUES ($1, $2, $3, false) RETURNING id',
-        [user_id, name, description || '']
-      );
+    // 1. Cria a ficha de treino na tabela `workouts`
+    const workoutRes = await client.query(
+      `
+      INSERT INTO workouts (user_id, name, description, is_template) 
+      VALUES ($1, $2, $3, false) 
+      RETURNING id, name, description, created_at
+      `,
+      [user_id, name, description || null]
+    );
 
-      const workoutId = workoutRes.rows[0].id;
+    const workout = workoutRes.rows[0];
 
+    // 2. Insere os exercícios vinculados na tabela `workout_exercises`
+    if (exercises && exercises.length > 0) {
       for (const ex of exercises) {
         await client.query(
-          'INSERT INTO workout_exercises (workout_id, exercise_id, target_sets, target_reps) VALUES ($1, $2, $3, $4)',
-          [workoutId, ex.exercise_id, ex.target_sets, ex.target_reps]
+          `
+          INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight) 
+          VALUES ($1, $2, $3, $4, $5)
+          `,
+          [workout.id, ex.exercise_id, ex.sets, ex.reps, ex.weight]
         );
       }
-
-      await client.query('COMMIT');
-      return reply.status(201).send({ workout_id: workoutId, message: 'Ficha criada com sucesso!' });
-    } catch (err) {
-      await client.query('ROLLBACK');
-      console.error(err);
-      return reply.status(400).send({ message: 'Erro ao criar ficha de treino.' });
-    } finally {
-      client.release();
     }
-  });
+
+    await client.query('COMMIT');
+
+    return reply.status(201).send({ 
+      workout_id: workout.id, 
+      workout,
+      message: 'Ficha de treino criada com sucesso!' 
+    });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+
+    // Se o erro for de validação de dados (Zod)
+    if (err instanceof z.ZodError) {
+      console.error('Erro de validação do Zod ao criar treino:', err.errors);
+      return reply.status(400).send({ 
+        message: 'Dados do treino inválidos.', 
+        details: err.errors 
+      });
+    }
+
+    console.error('Erro ao criar ficha de treino:', err);
+    return reply.status(500).send({ message: 'Erro interno ao criar ficha de treino.' });
+  } finally {
+    client.release();
+  }
+});
 
   // Atualizar Ficha Existente (Editar treino)
   app.put('/workouts/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
