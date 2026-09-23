@@ -1019,57 +1019,68 @@ app.post('/auth/login', async (request, reply) => {
   });
 
   app.delete('/workouts/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const user_id = request.user?.id;
+  const { id } = request.params as { id: string };
+  const user_id = request.user?.id;
 
-    if (!user_id) {
-      return reply.status(401).send({ message: 'Usuário não autenticado.' });
+  if (!user_id) {
+    return reply.status(401).send({ message: 'Usuário não autenticado.' });
+  }
+
+  if (!z.string().uuid().safeParse(id).success) {
+    return reply.status(400).send({ message: 'ID de treino inválido.' });
+  }
+
+  const client = await pool.connect();
+  let inTransaction = false;
+
+  try {
+    // 1. Verifica existência e permissão
+    const workoutCheck = await client.query(
+      'SELECT user_id FROM workouts WHERE id = $1',
+      [id]
+    );
+
+    if (workoutCheck.rows.length === 0) {
+      return reply.status(404).send({ message: 'Ficha de treino não encontrada.' });
     }
 
-    if (!z.string().uuid().safeParse(id).success) {
-      return reply.status(400).send({ message: 'ID de treino inválido.' });
+    if (workoutCheck.rows[0].user_id !== user_id) {
+      return reply.status(403).send({ message: 'Você não tem permissão para deletar esta ficha.' });
     }
 
-    const client = await pool.connect();
+    // 2. Inicia a transação com flag de controle
+    await client.query('BEGIN');
+    inTransaction = true;
 
-    try {
-      const workoutCheck = await client.query(
-        'SELECT is_template, user_id FROM workouts WHERE id = $1',
-        [id]
-      );
+    // 3. Deleta em ordem hierárquica (filhos -> pais)
+    await client.query(
+      `DELETE FROM set_logs 
+       WHERE workout_log_id IN (SELECT id FROM workout_logs WHERE workout_id = $1)`,
+      [id]
+    );
 
-      if (workoutCheck.rows.length === 0) {
-        return reply.status(404).send({ message: 'Ficha de treino não encontrada.' });
-      }
+    await client.query('DELETE FROM workout_logs WHERE workout_id = $1', [id]);
+    await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
+    await client.query('DELETE FROM workouts WHERE id = $1 AND user_id = $2', [id, user_id]);
 
-      const workout = workoutCheck.rows[0];
+    await client.query('COMMIT');
+    inTransaction = false;
 
-      if (workout.user_id !== user_id) {
-        return reply.status(403).send({ message: 'Você não tem permissão para deletar esta ficha.' });
-      }
+    return reply.status(200).send({ message: 'Ficha de treino deletada com sucesso!' });
 
-      await client.query('BEGIN');
-
-      await client.query(
-        `DELETE FROM set_logs 
-         WHERE workout_log_id IN (SELECT id FROM workout_logs WHERE workout_id = $1)`,
-        [id]
-      );
-
-      await client.query('DELETE FROM workout_logs WHERE workout_id = $1', [id]);
-      await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
-      await client.query('DELETE FROM workouts WHERE id = $1', [id]);
-
-      await client.query('COMMIT');
-      return reply.status(200).send({ message: 'Ficha de treino deletada com sucesso!' });
-    } catch (err) {
-      await client.query('ROLLBACK');
-      console.error(err);
-      return reply.status(500).send({ message: 'Erro ao deletar ficha de treino.' });
-    } finally {
-      client.release();
+  } catch (err) {
+    if (inTransaction) {
+      await client.query('ROLLBACK').catch(() => {});
     }
-  });
+    console.error('Erro ao deletar treino:', err);
+    return reply.status(500).send({ 
+      message: 'Erro ao deletar ficha de treino.',
+      error: err instanceof Error ? err.message : String(err)
+    });
+  } finally {
+    client.release();
+  }
+});
 
   // ==========================================
   // ROTAS DE EXECUÇÃO E HISTÓRICO DE TREINOS
