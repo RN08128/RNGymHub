@@ -17,20 +17,29 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+const isSecurePort = process.env.EMAIL_PORT === '465';
+
 // Configuração do Transporter do Nodemailer para envio de e-mails
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
-  port: parseInt(process.env.EMAIL_PORT || '587', 10),
-  secure: false, // true para 465, false para outras portas
+  port: parseInt(process.env.EMAIL_PORT || '465', 10),
+  secure: isSecurePort, // true para porta 465, false para 587
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
   connectionTimeout: 10000,
-  // 'family' is not a valid nodemailer Transport option; removed to fix type error. 
   tls: {
     rejectUnauthorized: false, // Permite certificados autoassinados
   },
+});
+
+await transporter.verify((error, success) => {
+  if (error) {
+    console.error('❌ Erro na configuração do servidor de e-mail (SMTP):', error);
+  } else {
+    console.log('✅ Servidor de e-mail pronto para enviar mensagens.');
+  }
 });
 
 // Declaração de tipos para o payload do JWT na Request
