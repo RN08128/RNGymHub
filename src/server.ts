@@ -344,7 +344,7 @@ async function main() {
 
     // 4. Envia o e-mail em um bloco isolado para que falhas de SMTP não travem a resposta HTTP
     try {
-      await transporter.sendMail({
+       transporter.sendMail({
         from: `"RNGymHub" <${process.env.EMAIL_USER}>`,
         to: email,
         subject: 'Seu Código de Verificação - RNGymHub',
@@ -385,6 +385,7 @@ app.post('/auth/verify-code', async (request, reply) => {
   try {
     const { email, code } = verifySchema.parse(request.body);
 
+    // 1. Busca o registro do usuário pendente com o código válido
     const userRes = await client.query(
       `
       SELECT * FROM users 
@@ -399,11 +400,14 @@ app.post('/auth/verify-code', async (request, reply) => {
     );
 
     if (userRes.rows.length === 0) {
-      return reply.status(400).send({ message: 'Código incorreto, expirado ou e-mail inválido.' });
+      return reply.status(400).send({ 
+        message: 'Código incorreto, expirado ou e-mail inválido.' 
+      });
     }
 
     const unverifiedUser = userRes.rows[0];
 
+    // 2. Início da transação de ativação
     await client.query('BEGIN');
 
     const updatedUserRes = await client.query(
@@ -418,9 +422,16 @@ app.post('/auth/verify-code', async (request, reply) => {
 
     const activeUser = updatedUserRes.rows[0];
 
-    await populateDefaultExercisesForUser(client, activeUser.id);
+    // 3. Tenta popular exercícios padrão sem derrubar a ativação em caso de erro
+    try {
+      if (typeof populateDefaultExercisesForUser === 'function') {
+        await populateDefaultExercisesForUser(client, activeUser.id);
+      }
+    } catch (exerciseErr) {
+      console.error('AVISO: Falha ao popular exercícios padrão para o usuário:', exerciseErr);
+    }
 
-    // Remove qualquer outro registo pendente residual com o mesmo e-mail
+    // 4. Limpa quaisquer contas não verificadas duplicadas com o mesmo e-mail
     await client.query(
       'DELETE FROM users WHERE email = $1 AND is_verified = false AND id != $2',
       [email, activeUser.id]
@@ -428,20 +439,28 @@ app.post('/auth/verify-code', async (request, reply) => {
 
     await client.query('COMMIT');
 
-    const token = app.jwt.sign(
-      { id: activeUser.id, name: activeUser.name, email: activeUser.email },
-      { expiresIn: '7d' }
-    );
+    // 5. Gera o JWT Token (Compatível com @fastify/jwt)
+    const payload = { id: activeUser.id, name: activeUser.name, email: activeUser.email };
+    const token = typeof reply.jwtSign === 'function' 
+      ? await reply.jwtSign(payload, { expiresIn: '7d' })
+      : app.jwt.sign(payload, { expiresIn: '7d' });
 
     return reply.status(200).send({
       user: activeUser,
       token,
       message: 'E-mail verificado com sucesso!',
     });
+
   } catch (err) {
-    await client.query('ROLLBACK');
+    // Executa ROLLBACK apenas se a transação do banco ainda estiver aberta
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackErr) {
+      // Ignora erro de rollback se a conexão já tiver sido encerrada
+    }
+
     console.error('Erro ao verificar código:', err);
-    return reply.status(500).send({ message: 'Erro ao verificar o código.' });
+    return reply.status(500).send({ message: 'Erro interno ao verificar o código.' });
   } finally {
     client.release();
   }
