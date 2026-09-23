@@ -291,28 +291,47 @@ async function main() {
   // ==========================================
 
   app.post('/auth/register-request', async (request, reply) => {
-    const registerSchema = z.object({
-      name: z.string().min(3),
-      email: z.string().email(),
-      password: z.string().min(6),
-    });
+  const registerSchema = z.object({
+    name: z.string().min(3),
+    email: z.string().email(),
+    password: z.string().min(6),
+  });
 
-    try {
-      const { name, email, password } = registerSchema.parse(request.body);
+  try {
+    const { name, email, password } = registerSchema.parse(request.body);
 
-      const verifiedUser = await pool.query(
-        'SELECT id FROM users WHERE email = $1 AND is_verified = true',
-        [email]
+    // 1. Verifica se já existe um utilizador verificado com este e-mail
+    const verifiedUser = await pool.query(
+      'SELECT id FROM users WHERE email = $1 AND is_verified = true',
+      [email]
+    );
+
+    if (verifiedUser.rows.length > 0) {
+      return reply.status(400).send({ message: 'Este e-mail já está em uso por uma conta verificada.' });
+    }
+
+    const password_hash = await bcrypt.hash(password, 10);
+    const verification_code = Math.floor(100000 + Math.random() * 900000).toString();
+    const code_expires_at = new Date(Date.now() + 15 * 60 * 1000);
+
+    // 2. Procura se já existe um registo pendente (não verificado)
+    const pendingUser = await pool.query(
+      'SELECT id FROM users WHERE email = $1 AND is_verified = false',
+      [email]
+    );
+
+    if (pendingUser.rows.length > 0) {
+      // Atualiza os dados, a palavra-passe e o código da conta pendente existente
+      await pool.query(
+        `
+        UPDATE users 
+        SET name = $1, password_hash = $2, verification_code = $3, code_expires_at = $4, created_at = NOW()
+        WHERE id = $5
+        `,
+        [name, password_hash, verification_code, code_expires_at, pendingUser.rows[0].id]
       );
-
-      if (verifiedUser.rows.length > 0) {
-        return reply.status(400).send({ message: 'Este e-mail já está em uso por uma conta verificada.' });
-      }
-
-      const password_hash = await bcrypt.hash(password, 10);
-      const verification_code = Math.floor(100000 + Math.random() * 900000).toString();
-      const code_expires_at = new Date(Date.now() + 15 * 60 * 1000);
-
+    } else {
+      // Cria um novo registo se não existir nenhuma conta com este e-mail
       await pool.query(
         `
         INSERT INTO users (name, email, password_hash, verification_code, code_expires_at, is_verified)
@@ -320,7 +339,13 @@ async function main() {
         `,
         [name, email, password_hash, verification_code, code_expires_at]
       );
+    }
 
+    // 3. Exibe o código no log do servidor para testes (caso o SMTP falhe)
+    console.log(`[AUTH LOG] Código gerado para ${email}: ${verification_code}`);
+
+    // 4. Envia o e-mail em um bloco isolado para que falhas de SMTP não travem a resposta HTTP
+    try {
       await transporter.sendMail({
         from: `"RNGymHub" <${process.env.EMAIL_USER}>`,
         to: email,
@@ -336,128 +361,132 @@ async function main() {
           </div>
         `,
       });
-
-      return reply.status(200).send({
-        message: 'Código de verificação enviado para o seu e-mail!',
-        email,
-      });
-    } catch (err) {
-      console.error('Erro ao processar cadastro/envio de e-mail:', err);
-      return reply.status(400).send({ message: 'Erro ao solicitar cadastro. Verifique os dados fornecidos.' });
+    } catch (emailError) {
+      console.error('AVISO: Falha no disparo do SMTP (E-mail não enviado):', emailError.message);
     }
-  });
 
-  app.post('/auth/verify-code', async (request, reply) => {
-    const verifySchema = z.object({
-      email: z.string().email(),
-      code: z.string().length(6),
+    return reply.status(200).send({
+      message: 'Código de verificação gerado e enviado para o seu e-mail!',
+      email,
     });
+  } catch (err) {
+    console.error('Erro ao processar cadastro:', err);
+    return reply.status(400).send({ message: 'Erro ao solicitar cadastro. Verifique os dados fornecidos.' });
+  }
+});
 
-    const client = await pool.connect();
-
-    try {
-      const { email, code } = verifySchema.parse(request.body);
-
-      const userRes = await client.query(
-        `
-        SELECT * FROM users 
-        WHERE email = $1 
-          AND verification_code = $2 
-          AND is_verified = false 
-          AND code_expires_at > CURRENT_TIMESTAMP
-        ORDER BY created_at DESC
-        LIMIT 1
-        `,
-        [email, code]
-      );
-
-      if (userRes.rows.length === 0) {
-        return reply.status(400).send({ message: 'Código incorreto, expirado ou e-mail inválido.' });
-      }
-
-      const unverifiedUser = userRes.rows[0];
-
-      await client.query('BEGIN');
-
-      const updatedUserRes = await client.query(
-        `
-        UPDATE users 
-        SET is_verified = true, verification_code = NULL, code_expires_at = NULL
-        WHERE id = $1
-        RETURNING id, name, email
-        `,
-        [unverifiedUser.id]
-      );
-
-      const activeUser = updatedUserRes.rows[0];
-
-      await populateDefaultExercisesForUser(client, activeUser.id);
-
-      await client.query(
-        'DELETE FROM users WHERE email = $1 AND is_verified = false AND id != $2',
-        [email, activeUser.id]
-      );
-
-      await client.query('COMMIT');
-
-      const token = app.jwt.sign(
-        { id: activeUser.id, name: activeUser.name, email: activeUser.email },
-        { expiresIn: '7d' }
-      );
-
-      return reply.status(200).send({
-        user: activeUser,
-        token,
-        message: 'E-mail verificado com sucesso!',
-      });
-    } catch (err) {
-      await client.query('ROLLBACK');
-      console.error(err);
-      return reply.status(500).send({ message: 'Erro ao verificar o código.' });
-    } finally {
-      client.release();
-    }
+app.post('/auth/verify-code', async (request, reply) => {
+  const verifySchema = z.object({
+    email: z.string().email(),
+    code: z.string().length(6),
   });
 
-  app.post('/auth/login', async (request, reply) => {
-    const loginSchema = z.object({
-      login: z.string().min(1),
-      password: z.string().min(1),
+  const client = await pool.connect();
+
+  try {
+    const { email, code } = verifySchema.parse(request.body);
+
+    const userRes = await client.query(
+      `
+      SELECT * FROM users 
+      WHERE email = $1 
+        AND verification_code = $2 
+        AND is_verified = false 
+        AND code_expires_at > CURRENT_TIMESTAMP
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [email, code]
+    );
+
+    if (userRes.rows.length === 0) {
+      return reply.status(400).send({ message: 'Código incorreto, expirado ou e-mail inválido.' });
+    }
+
+    const unverifiedUser = userRes.rows[0];
+
+    await client.query('BEGIN');
+
+    const updatedUserRes = await client.query(
+      `
+      UPDATE users 
+      SET is_verified = true, verification_code = NULL, code_expires_at = NULL
+      WHERE id = $1
+      RETURNING id, name, email
+      `,
+      [unverifiedUser.id]
+    );
+
+    const activeUser = updatedUserRes.rows[0];
+
+    await populateDefaultExercisesForUser(client, activeUser.id);
+
+    // Remove qualquer outro registo pendente residual com o mesmo e-mail
+    await client.query(
+      'DELETE FROM users WHERE email = $1 AND is_verified = false AND id != $2',
+      [email, activeUser.id]
+    );
+
+    await client.query('COMMIT');
+
+    const token = app.jwt.sign(
+      { id: activeUser.id, name: activeUser.name, email: activeUser.email },
+      { expiresIn: '7d' }
+    );
+
+    return reply.status(200).send({
+      user: activeUser,
+      token,
+      message: 'E-mail verificado com sucesso!',
     });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao verificar código:', err);
+    return reply.status(500).send({ message: 'Erro ao verificar o código.' });
+  } finally {
+    client.release();
+  }
+});
 
-    try {
-      const { login, password } = loginSchema.parse(request.body);
-
-      const result = await pool.query(
-        'SELECT * FROM users WHERE (email = $1 OR name = $1) AND is_verified = true',
-        [login]
-      );
-
-      if (result.rows.length === 0) {
-        return reply.status(401).send({ message: 'Credenciais inválidas ou e-mail não verificado.' });
-      }
-
-      const user = result.rows[0];
-      const passwordMatch = await bcrypt.compare(password, user.password_hash);
-
-      if (!passwordMatch) {
-        return reply.status(401).send({ message: 'Credenciais inválidas.' });
-      }
-
-      const token = app.jwt.sign(
-        { id: user.id, name: user.name, email: user.email },
-        { expiresIn: '7d' }
-      );
-
-      return reply.status(200).send({
-        token,
-        user: { id: user.id, name: user.name, email: user.email },
-      });
-    } catch (err) {
-      console.error(err);
-      return reply.status(400).send({ message: 'Erro ao realizar login.' });
-    }
+app.post('/auth/login', async (request, reply) => {
+  const loginSchema = z.object({
+    login: z.string().min(1),
+    password: z.string().min(1),
   });
+
+  try {
+    const { login, password } = loginSchema.parse(request.body);
+
+    const result = await pool.query(
+      'SELECT * FROM users WHERE (email = $1 OR name = $1) AND is_verified = true',
+      [login]
+    );
+
+    if (result.rows.length === 0) {
+      return reply.status(401).send({ message: 'Credenciais inválidas ou e-mail não verificado.' });
+    }
+
+    const user = result.rows[0];
+    const passwordMatch = await bcrypt.compare(password, user.password_hash);
+
+    if (!passwordMatch) {
+      return reply.status(401).send({ message: 'Credenciais inválidas.' });
+    }
+
+    const token = app.jwt.sign(
+      { id: user.id, name: user.name, email: user.email },
+      { expiresIn: '7d' }
+    );
+
+    return reply.status(200).send({
+      token,
+      user: { id: user.id, name: user.name, email: user.email },
+    });
+  } catch (err) {
+    console.error('Erro ao realizar login:', err);
+    return reply.status(400).send({ message: 'Erro ao realizar login.' });
+  }
+});
 
   // ==========================================
   // NOVAS ROTAS: TREINOS PRONTOS E DIVISÕES
