@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { Pool } from 'pg';
 import type { PoolClient } from 'pg';
 import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
 const app = Fastify({ logger: true });
 
@@ -17,30 +18,7 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-const isSecurePort = process.env.EMAIL_PORT === '465';
-
-// Configuração do Transporter do Nodemailer para envio de e-mails
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: parseInt(process.env.EMAIL_PORT || '465', 10),
-  secure: isSecurePort, // true para porta 465, false para 587
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  connectionTimeout: 10000,
-  tls: {
-    rejectUnauthorized: false, // Permite certificados autoassinados
-  },
-});
-
-await transporter.verify((error, success) => {
-  if (error) {
-    console.error('❌ Erro na configuração do servidor de e-mail (SMTP):', error);
-  } else {
-    console.log('✅ Servidor de e-mail pronto para enviar mensagens.');
-  }
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Declaração de tipos para o payload do JWT na Request
 declare module '@fastify/jwt' {
@@ -303,104 +281,112 @@ async function main() {
   // ROTAS DE AUTENTICAÇÃO E CADASTRO
   // ==========================================
 
-app.post('/auth/register-request', async (request, reply) => {
-  const registerSchema = z.object({
-    name: z.string().min(3),
-    email: z.string().email(),
-    password: z.string().min(6),
-  });
+  app.post('/auth/register-request', async (request, reply) => {
+    const registerSchema = z.object({
+      name: z.string().min(3),
+      email: z.string().email(),
+      password: z.string().min(6),
+    });
 
-  try {
-    const { name, email, password } = registerSchema.parse(request.body);
+    try {
+      const { name, email, password } = registerSchema.parse(request.body);
 
-    // 1. Verifica se já existe um utilizador verificado com este e-mail
-    const verifiedUser = await pool.query(
-      'SELECT id FROM users WHERE email = $1 AND is_verified = true',
-      [email]
-    );
+      // 1. Verifica se já existe um utilizador verificado com este e-mail
+      const verifiedUser = await pool.query(
+        'SELECT id FROM users WHERE email = $1 AND is_verified = true',
+        [email]
+      );
 
-    if (verifiedUser.rows.length > 0) {
-      return reply.status(400).send({ message: 'Este e-mail já está em uso por uma conta verificada.' });
-    }
+      if (verifiedUser.rows.length > 0) {
+        return reply.status(400).send({ message: 'Este e-mail já está em uso por uma conta verificada.' });
+      }
 
-    const password_hash = await bcrypt.hash(password, 10);
-    const verification_code = Math.floor(100000 + Math.random() * 900000).toString();
-    const code_expires_at = new Date(Date.now() + 15 * 60 * 1000);
+      const password_hash = await bcrypt.hash(password, 10);
+      const verification_code = Math.floor(100000 + Math.random() * 900000).toString();
+      const code_expires_at = new Date(Date.now() + 15 * 60 * 1000);
 
-    // 2. Procura se já existe um registo pendente (não verificado)
-    const pendingUser = await pool.query(
-      'SELECT id FROM users WHERE email = $1 AND is_verified = false',
-      [email]
-    );
+      // 2. Procura se já existe um registo pendente (não verificado)
+      const pendingUser = await pool.query(
+        'SELECT id FROM users WHERE email = $1 AND is_verified = false',
+        [email]
+      );
 
-    if (pendingUser.rows.length > 0) {
-      // Atualiza os dados, a palavra-passe e o código da conta pendente existente
-      await pool.query(
-        `
+      if (pendingUser.rows.length > 0) {
+        // Atualiza os dados, a palavra-passe e o código da conta pendente existente
+        await pool.query(
+          `
         UPDATE users 
         SET name = $1, password_hash = $2, verification_code = $3, code_expires_at = $4, created_at = NOW()
         WHERE id = $5
         `,
-        [name, password_hash, verification_code, code_expires_at, pendingUser.rows[0].id]
-      );
-    } else {
-      // Cria um novo registo se não existir nenhuma conta com este e-mail
-      await pool.query(
-        `
+          [name, password_hash, verification_code, code_expires_at, pendingUser.rows[0].id]
+        );
+      } else {
+        // Cria um novo registo se não existir nenhuma conta com este e-mail
+        await pool.query(
+          `
         INSERT INTO users (name, email, password_hash, verification_code, code_expires_at, is_verified)
         VALUES ($1, $2, $3, $4, $5, false)
         `,
-        [name, email, password_hash, verification_code, code_expires_at]
-      );
+          [name, email, password_hash, verification_code, code_expires_at]
+        );
+      }
+
+      // 3. Exibe o código no log do servidor para testes
+      console.log(`[AUTH LOG] Código gerado para ${email}: ${verification_code}`);
+
+      // 4. Envia o código de verificação por e-mail usando Resend
+      try {
+        const { data, error } = await resend.emails.send({
+          from: 'RNGymHub <noreply@rngymhub.com>',
+          to: [email],
+          subject: 'Seu Código de Verificação - RNGymHub',
+          html: `
+            <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #121212; color: #ffffff; border-radius: 8px;">
+              <h2 style="color: #007bff;">Bem-vindo ao RNGymHub, ${name}!</h2>
+              <p>Para concluir a verificação da sua conta, utilize o código de verificação abaixo:</p>
+              <div style="background: #1e1e1e; font-size: 28px; font-weight: bold; letter-spacing: 5px; color: #007bff; padding: 15px; text-align: center; border-radius: 6px; margin: 20px 0;">
+                ${verification_code}
+              </div>
+              <p style="color: #aaaaaa; font-size: 13px;">Este código expira em 15 minutos.</p>
+            </div>
+          `,
+        });
+
+        if (error) {
+          console.error('AVISO: Falha no disparo do Resend (E-mail não enviado):', error);
+        } else {
+          console.log(`✅ E-mail de verificação enviado para ${email} com sucesso!`);
+        }
+      } catch (emailError) {
+        const errorMessage = emailError instanceof Error ? emailError.message : String(emailError);
+        console.error('AVISO: Falha na requisição de e-mail (E-mail não enviado):', errorMessage);
+      }
+
+      // 5. Retorno imediato
+      return reply.status(200).send({
+        message: 'Código de verificação gerado com sucesso!',
+        email,
+      });
+    } catch (err) {
+      console.error('Erro ao processar cadastro:', err);
+      return reply.status(400).send({ message: 'Erro ao solicitar cadastro. Verifique os dados fornecidos.' });
     }
-
-    // 3. Exibe o código no log do servidor para testes
-    console.log(`[AUTH LOG] Código gerado para ${email}: ${verification_code}`);
-
-    // 4. Disparo do e-mail em segundo plano com tratamento de erro na Promise (.catch)
-    transporter.sendMail({
-      from: `"RNGymHub" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Seu Código de Verificação - RNGymHub',
-      html: `
-        <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #121212; color: #ffffff; border-radius: 8px;">
-          <h2 style="color: #007bff;">Bem-vindo ao RNGymHub, ${name}!</h2>
-          <p>Para concluir a verificação da sua conta, utilize o código de verificação abaixo:</p>
-          <div style="background: #1e1e1e; font-size: 28px; font-weight: bold; letter-spacing: 5px; color: #007bff; padding: 15px; text-align: center; border-radius: 6px; margin: 20px 0;">
-            ${verification_code}
-          </div>
-          <p style="color: #aaaaaa; font-size: 13px;">Este código expira em 15 minutos.</p>
-        </div>
-      `,
-    }).catch((emailError) => {
-      const errorMessage = emailError instanceof Error ? emailError.message : String(emailError);
-      console.error('AVISO: Falha no disparo do SMTP (E-mail não enviado):', errorMessage);
-    });
-
-    // 5. Retorno imediato
-    return reply.status(200).send({
-      message: 'Código de verificação gerado com sucesso!',
-      email,
-    });
-  } catch (err) {
-    console.error('Erro ao processar cadastro:', err);
-    return reply.status(400).send({ message: 'Erro ao solicitar cadastro. Verifique os dados fornecidos.' });
-  }
-});
-app.post('/auth/verify-code', async (request, reply) => {
-  const verifySchema = z.object({
-    email: z.string().email(),
-    code: z.string().length(6),
   });
+  app.post('/auth/verify-code', async (request, reply) => {
+    const verifySchema = z.object({
+      email: z.string().email(),
+      code: z.string().length(6),
+    });
 
-  const client = await pool.connect();
+    const client = await pool.connect();
 
-  try {
-    const { email, code } = verifySchema.parse(request.body);
+    try {
+      const { email, code } = verifySchema.parse(request.body);
 
-    // 1. Busca o registro do usuário pendente com o código válido
-    const userRes = await client.query(
-      `
+      // 1. Busca o registro do usuário pendente com o código válido
+      const userRes = await client.query(
+        `
       SELECT * FROM users 
       WHERE email = $1 
         AND verification_code = $2 
@@ -409,115 +395,115 @@ app.post('/auth/verify-code', async (request, reply) => {
       ORDER BY created_at DESC
       LIMIT 1
       `,
-      [email, code]
-    );
+        [email, code]
+      );
 
-    if (userRes.rows.length === 0) {
-      return reply.status(400).send({ 
-        message: 'Código incorreto, expirado ou e-mail inválido.' 
-      });
-    }
+      if (userRes.rows.length === 0) {
+        return reply.status(400).send({
+          message: 'Código incorreto, expirado ou e-mail inválido.'
+        });
+      }
 
-    const unverifiedUser = userRes.rows[0];
+      const unverifiedUser = userRes.rows[0];
 
-    // 2. Início da transação de ativação
-    await client.query('BEGIN');
+      // 2. Início da transação de ativação
+      await client.query('BEGIN');
 
-    const updatedUserRes = await client.query(
-      `
+      const updatedUserRes = await client.query(
+        `
       UPDATE users 
       SET is_verified = true, verification_code = NULL, code_expires_at = NULL
       WHERE id = $1
       RETURNING id, name, email
       `,
-      [unverifiedUser.id]
-    );
+        [unverifiedUser.id]
+      );
 
-    const activeUser = updatedUserRes.rows[0];
+      const activeUser = updatedUserRes.rows[0];
 
-    // 3. Tenta popular exercícios padrão sem derrubar a ativação em caso de erro
-    try {
-      if (typeof populateDefaultExercisesForUser === 'function') {
-        await populateDefaultExercisesForUser(client, activeUser.id);
+      // 3. Tenta popular exercícios padrão sem derrubar a ativação em caso de erro
+      try {
+        if (typeof populateDefaultExercisesForUser === 'function') {
+          await populateDefaultExercisesForUser(client, activeUser.id);
+        }
+      } catch (exerciseErr) {
+        console.error('AVISO: Falha ao popular exercícios padrão para o usuário:', exerciseErr);
       }
-    } catch (exerciseErr) {
-      console.error('AVISO: Falha ao popular exercícios padrão para o usuário:', exerciseErr);
+
+      // 4. Limpa quaisquer contas não verificadas duplicadas com o mesmo e-mail
+      await client.query(
+        'DELETE FROM users WHERE email = $1 AND is_verified = false AND id != $2',
+        [email, activeUser.id]
+      );
+
+      await client.query('COMMIT');
+
+      // 5. Gera o JWT Token (Compatível com @fastify/jwt)
+      const payload = { id: activeUser.id, name: activeUser.name, email: activeUser.email };
+      const token = typeof reply.jwtSign === 'function'
+        ? await reply.jwtSign(payload, { expiresIn: '7d' })
+        : app.jwt.sign(payload, { expiresIn: '7d' });
+
+      return reply.status(200).send({
+        user: activeUser,
+        token,
+        message: 'E-mail verificado com sucesso!',
+      });
+
+    } catch (err) {
+      // Executa ROLLBACK apenas se a transação do banco ainda estiver aberta
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        // Ignora erro de rollback se a conexão já tiver sido encerrada
+      }
+
+      console.error('Erro ao verificar código:', err);
+      return reply.status(500).send({ message: 'Erro interno ao verificar o código.' });
+    } finally {
+      client.release();
     }
-
-    // 4. Limpa quaisquer contas não verificadas duplicadas com o mesmo e-mail
-    await client.query(
-      'DELETE FROM users WHERE email = $1 AND is_verified = false AND id != $2',
-      [email, activeUser.id]
-    );
-
-    await client.query('COMMIT');
-
-    // 5. Gera o JWT Token (Compatível com @fastify/jwt)
-    const payload = { id: activeUser.id, name: activeUser.name, email: activeUser.email };
-    const token = typeof reply.jwtSign === 'function' 
-      ? await reply.jwtSign(payload, { expiresIn: '7d' })
-      : app.jwt.sign(payload, { expiresIn: '7d' });
-
-    return reply.status(200).send({
-      user: activeUser,
-      token,
-      message: 'E-mail verificado com sucesso!',
-    });
-
-  } catch (err) {
-    // Executa ROLLBACK apenas se a transação do banco ainda estiver aberta
-    try {
-      await client.query('ROLLBACK');
-    } catch (rollbackErr) {
-      // Ignora erro de rollback se a conexão já tiver sido encerrada
-    }
-
-    console.error('Erro ao verificar código:', err);
-    return reply.status(500).send({ message: 'Erro interno ao verificar o código.' });
-  } finally {
-    client.release();
-  }
-});
-
-app.post('/auth/login', async (request, reply) => {
-  const loginSchema = z.object({
-    login: z.string().min(1),
-    password: z.string().min(1),
   });
 
-  try {
-    const { login, password } = loginSchema.parse(request.body);
-
-    const result = await pool.query(
-      'SELECT * FROM users WHERE (email = $1 OR name = $1) AND is_verified = true',
-      [login]
-    );
-
-    if (result.rows.length === 0) {
-      return reply.status(401).send({ message: 'Credenciais inválidas ou e-mail não verificado.' });
-    }
-
-    const user = result.rows[0];
-    const passwordMatch = await bcrypt.compare(password, user.password_hash);
-
-    if (!passwordMatch) {
-      return reply.status(401).send({ message: 'Credenciais inválidas.' });
-    }
-
-    const token = app.jwt.sign(
-      { id: user.id, name: user.name, email: user.email },
-      { expiresIn: '7d' }
-    );
-
-    return reply.status(200).send({
-      token,
-      user: { id: user.id, name: user.name, email: user.email },
+  app.post('/auth/login', async (request, reply) => {
+    const loginSchema = z.object({
+      login: z.string().min(1),
+      password: z.string().min(1),
     });
-  } catch (err) {
-    console.error('Erro ao realizar login:', err);
-    return reply.status(400).send({ message: 'Erro ao realizar login.' });
-  }
-});
+
+    try {
+      const { login, password } = loginSchema.parse(request.body);
+
+      const result = await pool.query(
+        'SELECT * FROM users WHERE (email = $1 OR name = $1) AND is_verified = true',
+        [login]
+      );
+
+      if (result.rows.length === 0) {
+        return reply.status(401).send({ message: 'Credenciais inválidas ou e-mail não verificado.' });
+      }
+
+      const user = result.rows[0];
+      const passwordMatch = await bcrypt.compare(password, user.password_hash);
+
+      if (!passwordMatch) {
+        return reply.status(401).send({ message: 'Credenciais inválidas.' });
+      }
+
+      const token = app.jwt.sign(
+        { id: user.id, name: user.name, email: user.email },
+        { expiresIn: '7d' }
+      );
+
+      return reply.status(200).send({
+        token,
+        user: { id: user.id, name: user.name, email: user.email },
+      });
+    } catch (err) {
+      console.error('Erro ao realizar login:', err);
+      return reply.status(400).send({ message: 'Erro ao realizar login.' });
+    }
+  });
 
   // ==========================================
   // NOVAS ROTAS: TREINOS PRONTOS E DIVISÕES
@@ -538,85 +524,85 @@ app.post('/auth/login', async (request, reply) => {
 
   // 2. Copiar um Treino Pronto para as fichas do Usuário (Editável)
   app.post('/workouts/templates/:id/copy', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-  const { id } = request.params as { id: string };
-  const user_id = request.user?.id;
+    const { id } = request.params as { id: string };
+    const user_id = request.user?.id;
 
-  if (!user_id) {
-    return reply.status(401).send({ message: 'Usuário não autenticado.' });
-  }
-
-  if (!z.string().uuid().safeParse(id).success) {
-    return reply.status(400).send({ message: 'ID de treino inválido.' });
-  }
-
-  const client = await pool.connect();
-  let inTransaction = false;
-
-  try {
-    // 1. Busca o modelo ANTES de iniciar a transação no banco
-    const templateRes = await client.query(
-      'SELECT name, description FROM workouts WHERE id = $1 AND is_template = true',
-      [id]
-    );
-
-    if (templateRes.rows.length === 0) {
-      return reply.status(404).send({ message: 'Treino pronto não encontrado.' });
+    if (!user_id) {
+      return reply.status(401).send({ message: 'Usuário não autenticado.' });
     }
 
-    const template = templateRes.rows[0];
+    if (!z.string().uuid().safeParse(id).success) {
+      return reply.status(400).send({ message: 'ID de treino inválido.' });
+    }
 
-    // 2. Inicia a transação
-    await client.query('BEGIN');
-    inTransaction = true;
+    const client = await pool.connect();
+    let inTransaction = false;
 
-    // 3. Cria a cópia do treino para o usuário
-    const newWorkoutRes = await client.query(
-      'INSERT INTO workouts (user_id, name, description, is_template) VALUES ($1, $2, $3, false) RETURNING id',
-      [user_id, template.name, template.description]
-    );
-
-    const newWorkoutId = newWorkoutRes.rows[0].id;
-
-    // 4. Copia os exercícios associados usando as colunas corretas (sets e reps)
-    const exercisesRes = await client.query(
-      'SELECT exercise_id, sets, reps, weight FROM workout_exercises WHERE workout_id = $1',
-      [id]
-    );
-
-    for (const ex of exercisesRes.rows) {
-      await client.query(
-        'INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight) VALUES ($1, $2, $3, $4, $5)',
-        [newWorkoutId, ex.exercise_id, ex.sets, ex.reps, ex.weight || 0]
+    try {
+      // 1. Busca o modelo ANTES de iniciar a transação no banco
+      const templateRes = await client.query(
+        'SELECT name, description FROM workouts WHERE id = $1 AND is_template = true',
+        [id]
       );
+
+      if (templateRes.rows.length === 0) {
+        return reply.status(404).send({ message: 'Treino pronto não encontrado.' });
+      }
+
+      const template = templateRes.rows[0];
+
+      // 2. Inicia a transação
+      await client.query('BEGIN');
+      inTransaction = true;
+
+      // 3. Cria a cópia do treino para o usuário
+      const newWorkoutRes = await client.query(
+        'INSERT INTO workouts (user_id, name, description, is_template) VALUES ($1, $2, $3, false) RETURNING id',
+        [user_id, template.name, template.description]
+      );
+
+      const newWorkoutId = newWorkoutRes.rows[0].id;
+
+      // 4. Copia os exercícios associados usando as colunas corretas (sets e reps)
+      const exercisesRes = await client.query(
+        'SELECT exercise_id, sets, reps, weight FROM workout_exercises WHERE workout_id = $1',
+        [id]
+      );
+
+      for (const ex of exercisesRes.rows) {
+        await client.query(
+          'INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight) VALUES ($1, $2, $3, $4, $5)',
+          [newWorkoutId, ex.exercise_id, ex.sets, ex.reps, ex.weight || 0]
+        );
+      }
+
+      await client.query('COMMIT');
+      inTransaction = false;
+
+      return reply.status(201).send({
+        workout_id: newWorkoutId,
+        message: 'Treino copiado com sucesso para suas fichas!'
+      });
+
+    } catch (err) {
+      if (inTransaction) {
+        await client.query('ROLLBACK').catch(() => { });
+      }
+      console.error('Erro ao copiar treino pronto:', err);
+      return reply.status(500).send({
+        message: 'Erro ao copiar treino pronto.',
+        error: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      client.release();
     }
-
-    await client.query('COMMIT');
-    inTransaction = false;
-
-    return reply.status(201).send({
-      workout_id: newWorkoutId,
-      message: 'Treino copiado com sucesso para suas fichas!'
-    });
-
-  } catch (err) {
-    if (inTransaction) {
-      await client.query('ROLLBACK').catch(() => {});
-    }
-    console.error('Erro ao copiar treino pronto:', err);
-    return reply.status(500).send({
-      message: 'Erro ao copiar treino pronto.',
-      error: err instanceof Error ? err.message : String(err)
-    });
-  } finally {
-    client.release();
-  }
-});
+  });
 
   // 3. Listar Divisões Prontas (Aba "Divisões Prontas")
- app.get('/routines/templates', async (request, reply) => {
-  try {
-    const result = await pool.query(
-      `
+  app.get('/routines/templates', async (request, reply) => {
+    try {
+      const result = await pool.query(
+        `
       SELECT 
         rt.id, 
         rt.name, 
@@ -628,47 +614,47 @@ app.post('/auth/login', async (request, reply) => {
       GROUP BY rt.id
       ORDER BY rt.name ASC
       `
-    );
+      );
 
-    return reply.status(200).send(result.rows);
-  } catch (err) {
-    console.error('Erro ao buscar divisões de treino:', err);
-    return reply.status(500).send({ 
-      message: 'Erro ao buscar divisões de treino.',
-      error: err instanceof Error ? err.message : String(err)
-    });
-  }
-});
+      return reply.status(200).send(result.rows);
+    } catch (err) {
+      console.error('Erro ao buscar divisões de treino:', err);
+      return reply.status(500).send({
+        message: 'Erro ao buscar divisões de treino.',
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
 
   // 4. Copiar uma Divisão Pronta Completa para o Usuário
   app.post('/routines/templates/:id/copy', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-  const { id } = request.params as { id: string };
-  const user_id = request.user?.id || (request.user as any)?.sub;
+    const { id } = request.params as { id: string };
+    const user_id = request.user?.id || (request.user as any)?.sub;
 
-  if (!user_id) {
-    return reply.status(401).send({ message: 'Usuário não autenticado.' });
-  }
-
-  // Validação do formato do UUID
-  if (!z.string().uuid().safeParse(id).success) {
-    return reply.status(400).send({ message: 'ID de divisão inválido.' });
-  }
-
-  const client = await pool.connect();
-  let inTransaction = false;
-
-  try {
-    // 1. Verifica se a rotina/divisão existe antes de abrir transação
-    const routineRes = await client.query('SELECT name FROM routine_templates WHERE id = $1', [id]);
-    if (routineRes.rows.length === 0) {
-      return reply.status(404).send({ message: 'Divisão não encontrada.' });
+    if (!user_id) {
+      return reply.status(401).send({ message: 'Usuário não autenticado.' });
     }
 
-    console.log(`[COPY ROUTINE] Copiando rotina ID: ${id} para usuário ID: ${user_id}`);
+    // Validação do formato do UUID
+    if (!z.string().uuid().safeParse(id).success) {
+      return reply.status(400).send({ message: 'ID de divisão inválido.' });
+    }
 
-    // 2. Busca os treinos da rotina
-    const workoutsRes = await client.query(
-      `
+    const client = await pool.connect();
+    let inTransaction = false;
+
+    try {
+      // 1. Verifica se a rotina/divisão existe antes de abrir transação
+      const routineRes = await client.query('SELECT name FROM routine_templates WHERE id = $1', [id]);
+      if (routineRes.rows.length === 0) {
+        return reply.status(404).send({ message: 'Divisão não encontrada.' });
+      }
+
+      console.log(`[COPY ROUTINE] Copiando rotina ID: ${id} para usuário ID: ${user_id}`);
+
+      // 2. Busca os treinos da rotina
+      const workoutsRes = await client.query(
+        `
       SELECT 
         rtw.day_order, 
         w.id AS workout_id, 
@@ -679,72 +665,72 @@ app.post('/auth/login', async (request, reply) => {
       WHERE rtw.routine_template_id = $1
       ORDER BY rtw.day_order ASC
       `,
-      [id]
-    );
+        [id]
+      );
 
-    console.log(`[COPY ROUTINE] Treinos encontrados: ${workoutsRes.rows.length}`);
+      console.log(`[COPY ROUTINE] Treinos encontrados: ${workoutsRes.rows.length}`);
 
-    if (workoutsRes.rows.length === 0) {
-      return reply.status(404).send({
-        message: 'Nenhum treino encontrado vinculado a esta divisão no banco de dados.'
-      });
-    }
+      if (workoutsRes.rows.length === 0) {
+        return reply.status(404).send({
+          message: 'Nenhum treino encontrado vinculado a esta divisão no banco de dados.'
+        });
+      }
 
-    // 3. Inicia transação no banco
-    await client.query('BEGIN');
-    inTransaction = true;
+      // 3. Inicia transação no banco
+      await client.query('BEGIN');
+      inTransaction = true;
 
-    const createdWorkouts = [];
+      const createdWorkouts = [];
 
-    for (const row of workoutsRes.rows) {
-      const workoutName = `Dia ${row.day_order}: ${row.name}`;
+      for (const row of workoutsRes.rows) {
+        const workoutName = `Dia ${row.day_order}: ${row.name}`;
 
-      const newWorkoutRes = await client.query(
-        `INSERT INTO workouts (user_id, name, description, is_template) 
+        const newWorkoutRes = await client.query(
+          `INSERT INTO workouts (user_id, name, description, is_template) 
          VALUES ($1, $2, $3, false) 
          RETURNING id`,
-        [user_id, workoutName, row.description || '']
-      );
-
-      const newWorkoutId = newWorkoutRes.rows[0].id;
-      createdWorkouts.push(newWorkoutId);
-
-      // 4. Copia os exercícios ajustado para as colunas reais (sets, reps, weight)
-      const exercisesRes = await client.query(
-        'SELECT exercise_id, sets, reps, weight FROM workout_exercises WHERE workout_id = $1',
-        [row.workout_id]
-      );
-
-      for (const ex of exercisesRes.rows) {
-        await client.query(
-          `INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight) 
-           VALUES ($1, $2, $3, $4, $5)`,
-          [newWorkoutId, ex.exercise_id, ex.sets, ex.reps, ex.weight || 0]
+          [user_id, workoutName, row.description || '']
         );
+
+        const newWorkoutId = newWorkoutRes.rows[0].id;
+        createdWorkouts.push(newWorkoutId);
+
+        // 4. Copia os exercícios ajustado para as colunas reais (sets, reps, weight)
+        const exercisesRes = await client.query(
+          'SELECT exercise_id, sets, reps, weight FROM workout_exercises WHERE workout_id = $1',
+          [row.workout_id]
+        );
+
+        for (const ex of exercisesRes.rows) {
+          await client.query(
+            `INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight) 
+           VALUES ($1, $2, $3, $4, $5)`,
+            [newWorkoutId, ex.exercise_id, ex.sets, ex.reps, ex.weight || 0]
+          );
+        }
       }
+
+      await client.query('COMMIT');
+      inTransaction = false;
+
+      return reply.status(201).send({
+        message: 'Divisão de treino adicionada à sua conta com sucesso!',
+        workouts_created: createdWorkouts.length,
+      });
+
+    } catch (err) {
+      if (inTransaction) {
+        await client.query('ROLLBACK').catch(() => { });
+      }
+      console.error('[COPY ROUTINE ERROR]:', err);
+      return reply.status(500).send({
+        message: 'Erro ao copiar divisão de treinos.',
+        error: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      client.release();
     }
-
-    await client.query('COMMIT');
-    inTransaction = false;
-
-    return reply.status(201).send({
-      message: 'Divisão de treino adicionada à sua conta com sucesso!',
-      workouts_created: createdWorkouts.length,
-    });
-
-  } catch (err) {
-    if (inTransaction) {
-      await client.query('ROLLBACK').catch(() => {});
-    }
-    console.error('[COPY ROUTINE ERROR]:', err);
-    return reply.status(500).send({ 
-      message: 'Erro ao copiar divisão de treinos.',
-      error: err instanceof Error ? err.message : String(err)
-    });
-  } finally {
-    client.release();
-  }
-});
+  });
   // ==========================================
   // ROTAS DE EXERCÍCIOS (ISOLADOS POR USUÁRIO)
   // ==========================================
@@ -845,168 +831,168 @@ app.post('/auth/login', async (request, reply) => {
   // ==========================================
 
   app.post('/workouts', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-  // Schema flexível e compatível com o schema da tabela workout_exercises
-  const workoutSchema = z.object({
-    name: z.string().min(1, { message: 'O nome do treino é obrigatório.' }),
-    description: z.string().optional().nullable(),
-    exercises: z.array(
-      z.object({
-        exercise_id: z.string().uuid({ message: 'ID de exercício inválido.' }),
-        sets: z.number().int().positive().optional().default(3),
-        reps: z.number().int().positive().optional().default(10),
-        weight: z.number().nonnegative().optional().default(0),
-      })
-    ).optional().default([]),
+    // Schema flexível e compatível com o schema da tabela workout_exercises
+    const workoutSchema = z.object({
+      name: z.string().min(1, { message: 'O nome do treino é obrigatório.' }),
+      description: z.string().optional().nullable(),
+      exercises: z.array(
+        z.object({
+          exercise_id: z.string().uuid({ message: 'ID de exercício inválido.' }),
+          sets: z.number().int().positive().optional().default(3),
+          reps: z.number().int().positive().optional().default(10),
+          weight: z.number().nonnegative().optional().default(0),
+        })
+      ).optional().default([]),
+    });
+
+    const client = await pool.connect();
+
+    try {
+      const user_id = request.user?.id;
+
+      if (!user_id) {
+        return reply.status(401).send({ message: 'Usuário não autenticado.' });
+      }
+
+      const { name, description, exercises } = workoutSchema.parse(request.body);
+
+      await client.query('BEGIN');
+
+      // 1. Cria a ficha de treino na tabela `workouts`
+      const workoutRes = await client.query(
+        `
+      INSERT INTO workouts (user_id, name, description, is_template) 
+      VALUES ($1, $2, $3, false) 
+      RETURNING id, name, description, created_at
+      `,
+        [user_id, name, description || null]
+      );
+
+      const workout = workoutRes.rows[0];
+
+      // 2. Insere os exercícios vinculados na tabela `workout_exercises`
+      if (exercises && exercises.length > 0) {
+        for (const ex of exercises) {
+          await client.query(
+            `
+          INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight) 
+          VALUES ($1, $2, $3, $4, $5)
+          `,
+            [workout.id, ex.exercise_id, ex.sets, ex.reps, ex.weight]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+
+      return reply.status(201).send({
+        workout_id: workout.id,
+        workout,
+        message: 'Ficha de treino criada com sucesso!'
+      });
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+
+      // Se o erro for de validação de dados (Zod)
+      if (err instanceof z.ZodError) {
+        console.error('Erro de validação do Zod ao criar treino:', err.issues);
+        return reply.status(400).send({
+          message: 'Dados do treino inválidos.',
+          details: err.issues
+        });
+      }
+
+      console.error('Erro ao criar ficha de treino:', err);
+      return reply.status(500).send({ message: 'Erro interno ao criar ficha de treino.' });
+    } finally {
+      client.release();
+    }
   });
 
-  const client = await pool.connect();
-
-  try {
-    const user_id = request.user?.id;
+  // Atualizar Ficha Existente (Editar treino)
+  app.put('/workouts/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const user_id = request.user?.id || (request.user as any)?.sub;
+    const { name, description, exercises } = request.body as {
+      name: string;
+      description?: string;
+      exercises: Array<{ exercise_id: string; target_sets: number; target_reps: number }>;
+    };
 
     if (!user_id) {
       return reply.status(401).send({ message: 'Usuário não autenticado.' });
     }
 
-    const { name, description, exercises } = workoutSchema.parse(request.body);
+    const client = await pool.connect();
 
-    await client.query('BEGIN');
+    try {
+      await client.query('BEGIN');
 
-    // 1. Cria a ficha de treino na tabela `workouts`
-    const workoutRes = await client.query(
-      `
-      INSERT INTO workouts (user_id, name, description, is_template) 
-      VALUES ($1, $2, $3, false) 
-      RETURNING id, name, description, created_at
-      `,
-      [user_id, name, description || null]
-    );
+      // Atualiza nome e descrição da ficha
+      const updateWorkout = await client.query(
+        'UPDATE workouts SET name = $1, description = $2 WHERE id = $3 AND user_id = $4 RETURNING id',
+        [name, description || '', id, user_id]
+      );
 
-    const workout = workoutRes.rows[0];
-
-    // 2. Insere os exercícios vinculados na tabela `workout_exercises`
-    if (exercises && exercises.length > 0) {
-      for (const ex of exercises) {
-        await client.query(
-          `
-          INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight) 
-          VALUES ($1, $2, $3, $4, $5)
-          `,
-          [workout.id, ex.exercise_id, ex.sets, ex.reps, ex.weight]
-        );
+      if (updateWorkout.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return reply.status(404).send({ message: 'Treino não encontrado para atualização.' });
       }
-    }
 
-    await client.query('COMMIT');
+      // Remove os exercícios antigos e insere a nova lista
+      await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
 
-    return reply.status(201).send({ 
-      workout_id: workout.id, 
-      workout,
-      message: 'Ficha de treino criada com sucesso!' 
-    });
+      if (exercises && exercises.length > 0) {
+        for (const ex of exercises) {
+          await client.query(
+            'INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps) VALUES ($1, $2, $3, $4)',
+            [id, ex.exercise_id, ex.target_sets, ex.target_reps]
+          );
+        }
+      }
 
-  } catch (err) {
-    await client.query('ROLLBACK');
+      await client.query('COMMIT');
+      return reply.status(200).send({ message: 'Treino atualizado com sucesso!' });
 
-    // Se o erro for de validação de dados (Zod)
-    if (err instanceof z.ZodError) {
-      console.error('Erro de validação do Zod ao criar treino:', err.issues);
-      return reply.status(400).send({ 
-        message: 'Dados do treino inválidos.', 
-        details: err.issues 
-      });
-    }
-
-    console.error('Erro ao criar ficha de treino:', err);
-    return reply.status(500).send({ message: 'Erro interno ao criar ficha de treino.' });
-  } finally {
-    client.release();
-  }
-});
-
-  // Atualizar Ficha Existente (Editar treino)
-  app.put('/workouts/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-  const { id } = request.params as { id: string };
-  const user_id = request.user?.id || (request.user as any)?.sub;
-  const { name, description, exercises } = request.body as {
-    name: string;
-    description?: string;
-    exercises: Array<{ exercise_id: string; target_sets: number; target_reps: number }>;
-  };
-
-  if (!user_id) {
-    return reply.status(401).send({ message: 'Usuário não autenticado.' });
-  }
-
-  const client = await pool.connect();
-
-  try {
-    await client.query('BEGIN');
-
-    // Atualiza nome e descrição da ficha
-    const updateWorkout = await client.query(
-      'UPDATE workouts SET name = $1, description = $2 WHERE id = $3 AND user_id = $4 RETURNING id',
-      [name, description || '', id, user_id]
-    );
-
-    if (updateWorkout.rows.length === 0) {
+    } catch (err) {
       await client.query('ROLLBACK');
-      return reply.status(404).send({ message: 'Treino não encontrado para atualização.' });
+      console.error('Erro ao atualizar treino:', err);
+      return reply.status(500).send({ message: 'Erro ao atualizar ficha de treino.' });
+    } finally {
+      client.release();
     }
-
-    // Remove os exercícios antigos e insere a nova lista
-    await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
-
-    if (exercises && exercises.length > 0) {
-      for (const ex of exercises) {
-        await client.query(
-          'INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps) VALUES ($1, $2, $3, $4)',
-          [id, ex.exercise_id, ex.target_sets, ex.target_reps]
-        );
-      }
-    }
-
-    await client.query('COMMIT');
-    return reply.status(200).send({ message: 'Treino atualizado com sucesso!' });
-
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Erro ao atualizar treino:', err);
-    return reply.status(500).send({ message: 'Erro ao atualizar ficha de treino.' });
-  } finally {
-    client.release();
-  }
-});
+  });
 
   app.get('/workouts/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-  const { id } = request.params as { id: string };
-  const user_id = request.user?.id || (request.user as any)?.sub;
+    const { id } = request.params as { id: string };
+    const user_id = request.user?.id || (request.user as any)?.sub;
 
-  if (!user_id) {
-    return reply.status(401).send({ message: 'Usuário não autenticado.' });
-  }
-
-  // Valida o formato do UUID antes da query
-  if (!z.string().uuid().safeParse(id).success) {
-    return reply.status(400).send({ message: 'ID de treino inválido.' });
-  }
-
-  try {
-    // 1. Busca os dados da ficha de treino
-    const workoutRes = await pool.query(
-      'SELECT id, name, description FROM workouts WHERE id = $1 AND user_id = $2',
-      [id, user_id]
-    );
-
-    if (workoutRes.rows.length === 0) {
-      return reply.status(404).send({ message: 'Treino não encontrado.' });
+    if (!user_id) {
+      return reply.status(401).send({ message: 'Usuário não autenticado.' });
     }
 
-    const workout = workoutRes.rows[0];
+    // Valida o formato do UUID antes da query
+    if (!z.string().uuid().safeParse(id).success) {
+      return reply.status(400).send({ message: 'ID de treino inválido.' });
+    }
 
-    // 2. Busca os exercícios vinculados a essa ficha
-    const exercisesRes = await pool.query(
-      `
+    try {
+      // 1. Busca os dados da ficha de treino
+      const workoutRes = await pool.query(
+        'SELECT id, name, description FROM workouts WHERE id = $1 AND user_id = $2',
+        [id, user_id]
+      );
+
+      if (workoutRes.rows.length === 0) {
+        return reply.status(404).send({ message: 'Treino não encontrado.' });
+      }
+
+      const workout = workoutRes.rows[0];
+
+      // 2. Busca os exercícios vinculados a essa ficha
+      const exercisesRes = await pool.query(
+        `
       SELECT 
         we.exercise_id,
         e.name,
@@ -1016,24 +1002,24 @@ app.post('/auth/login', async (request, reply) => {
       JOIN exercises e ON e.id = we.exercise_id
       WHERE we.workout_id = $1
       `,
-      [id]
-    );
+        [id]
+      );
 
-    return reply.status(200).send({
-      id: workout.id,
-      name: workout.name,
-      description: workout.description,
-      exercises: exercisesRes.rows
-    });
+      return reply.status(200).send({
+        id: workout.id,
+        name: workout.name,
+        description: workout.description,
+        exercises: exercisesRes.rows
+      });
 
-  } catch (err) {
-    console.error('Erro ao buscar detalhes do treino:', err);
-    return reply.status(500).send({ 
-      message: 'Erro interno ao buscar treino.',
-      error: err instanceof Error ? err.message : String(err)
-    });
-  }
-});
+    } catch (err) {
+      console.error('Erro ao buscar detalhes do treino:', err);
+      return reply.status(500).send({
+        message: 'Erro interno ao buscar treino.',
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
 
   // Retorna os treinos do próprio usuário na tela principal
   app.get('/workouts', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
@@ -1063,61 +1049,61 @@ app.post('/auth/login', async (request, reply) => {
   });
 
   app.delete('/workouts/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-  const { id } = request.params as { id: string };
-  const user_id = request.user?.id;
+    const { id } = request.params as { id: string };
+    const user_id = request.user?.id;
 
-  if (!user_id) {
-    return reply.status(401).send({ message: 'Usuário não autenticado.' });
-  }
-
-  if (!z.string().uuid().safeParse(id).success) {
-    return reply.status(400).send({ message: 'ID de treino inválido.' });
-  }
-
-  const client = await pool.connect();
-  let inTransaction = false;
-
-  try {
-    // 1. Verifica existência e permissão
-    const workoutCheck = await client.query(
-      'SELECT user_id FROM workouts WHERE id = $1',
-      [id]
-    );
-
-    if (workoutCheck.rows.length === 0) {
-      return reply.status(404).send({ message: 'Ficha de treino não encontrada.' });
+    if (!user_id) {
+      return reply.status(401).send({ message: 'Usuário não autenticado.' });
     }
 
-    if (workoutCheck.rows[0].user_id !== user_id) {
-      return reply.status(403).send({ message: 'Você não tem permissão para deletar esta ficha.' });
+    if (!z.string().uuid().safeParse(id).success) {
+      return reply.status(400).send({ message: 'ID de treino inválido.' });
     }
 
-    // 2. Inicia a transação
-    await client.query('BEGIN');
-    inTransaction = true;
+    const client = await pool.connect();
+    let inTransaction = false;
 
-    // 3. Deleta os registros dependentes nas tabelas existentes
-    await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
-    await client.query('DELETE FROM workouts WHERE id = $1 AND user_id = $2', [id, user_id]);
+    try {
+      // 1. Verifica existência e permissão
+      const workoutCheck = await client.query(
+        'SELECT user_id FROM workouts WHERE id = $1',
+        [id]
+      );
 
-    await client.query('COMMIT');
-    inTransaction = false;
+      if (workoutCheck.rows.length === 0) {
+        return reply.status(404).send({ message: 'Ficha de treino não encontrada.' });
+      }
 
-    return reply.status(200).send({ message: 'Ficha de treino deletada com sucesso!' });
+      if (workoutCheck.rows[0].user_id !== user_id) {
+        return reply.status(403).send({ message: 'Você não tem permissão para deletar esta ficha.' });
+      }
 
-  } catch (err) {
-    if (inTransaction) {
-      await client.query('ROLLBACK').catch(() => {});
+      // 2. Inicia a transação
+      await client.query('BEGIN');
+      inTransaction = true;
+
+      // 3. Deleta os registros dependentes nas tabelas existentes
+      await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
+      await client.query('DELETE FROM workouts WHERE id = $1 AND user_id = $2', [id, user_id]);
+
+      await client.query('COMMIT');
+      inTransaction = false;
+
+      return reply.status(200).send({ message: 'Ficha de treino deletada com sucesso!' });
+
+    } catch (err) {
+      if (inTransaction) {
+        await client.query('ROLLBACK').catch(() => { });
+      }
+      console.error('Erro ao deletar treino:', err);
+      return reply.status(500).send({
+        message: 'Erro ao deletar ficha de treino.',
+        error: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      client.release();
     }
-    console.error('Erro ao deletar treino:', err);
-    return reply.status(500).send({ 
-      message: 'Erro ao deletar ficha de treino.',
-      error: err instanceof Error ? err.message : String(err)
-    });
-  } finally {
-    client.release();
-  }
-});
+  });
 
   // ==========================================
   // ROTAS DE EXECUÇÃO E HISTÓRICO DE TREINOS
