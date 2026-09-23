@@ -927,66 +927,69 @@ app.post('/auth/login', async (request, reply) => {
     }
   });
 
-  app.get('/workouts/:id/active', async (request, reply) => {
-    const { id } = request.params as { id: string };
+  app.get('/workouts/:id/active', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
+  const paramsSchema = z.object({
+    id: z.string().uuid('ID de treino inválido.'),
+  });
 
-    if (!z.string().uuid().safeParse(id).success) {
+  try {
+    const { id: workoutId } = paramsSchema.parse(request.params);
+    const userId = request.user?.id;
+
+    if (!userId) {
+      return reply.status(401).send({ message: 'Usuário não autenticado.' });
+    }
+
+    // 1. Busca os detalhes do treino garantindo pertencimento ao usuário
+    const workoutRes = await pool.query(
+      `
+      SELECT id, name, description, is_template, created_at 
+      FROM workouts 
+      WHERE id = $1 AND user_id = $2
+      `,
+      [workoutId, userId]
+    );
+
+    if (workoutRes.rows.length === 0) {
+      return reply.status(404).send({ message: 'Treino não encontrado.' });
+    }
+
+    const workout = workoutRes.rows[0];
+
+    // 2. Busca os exercícios vinculados fazendo JOIN entre workout_exercises e exercises
+    const exercisesRes = await pool.query(
+      `
+      SELECT 
+        we.id AS workout_exercise_id,
+        we.sets,
+        we.reps,
+        we.weight,
+        e.id AS exercise_id,
+        e.name AS name,
+        e.target_muscle,
+        e.description
+      FROM workout_exercises we
+      INNER JOIN exercises e ON we.exercise_id = e.id
+      WHERE we.workout_id = $1
+      ORDER BY we.created_at ASC
+      `,
+      [workoutId]
+    );
+
+    return reply.status(200).send({
+      ...workout,
+      exercises: exercisesRes.rows,
+    });
+
+  } catch (err) {
+    if (err instanceof z.ZodError) {
       return reply.status(400).send({ message: 'ID de treino inválido.' });
     }
 
-    try {
-      const workoutRes = await pool.query('SELECT * FROM workouts WHERE id = $1', [id]);
-      if (workoutRes.rows.length === 0) {
-        return reply.status(404).send({ message: 'Treino não encontrado.' });
-      }
-
-      const workout = workoutRes.rows[0];
-
-      const exercisesRes = await pool.query(
-        `
-        SELECT 
-          e.id AS exercise_id,
-          e.name,
-          we.target_sets,
-          we.target_reps,
-          COALESCE(MAX(sl.weight), 0) AS max_weight,
-          COALESCE(MAX(sl.weight * sl.reps), 0) AS max_volume_set
-        FROM workout_exercises we
-        JOIN exercises e ON e.id = we.exercise_id
-        LEFT JOIN set_logs sl ON sl.exercise_id = e.id
-        WHERE we.workout_id = $1
-        GROUP BY e.id, e.name, we.target_sets, we.target_reps
-        `,
-        [id]
-      );
-
-      const formattedExercises = exercisesRes.rows.map((ex) => ({
-        exercise_id: ex.exercise_id,
-        name: ex.name,
-        personal_record: {
-          max_weight: parseFloat(ex.max_weight),
-          max_volume_set: parseFloat(ex.max_volume_set),
-        },
-        sets: Array.from({ length: ex.target_sets }, (_, i) => ({
-          set_number: i + 1,
-          target_reps: ex.target_reps,
-          weight: null,
-          reps: null,
-          completed: false,
-        })),
-      }));
-
-      return reply.status(200).send({
-        workout_id: workout.id,
-        workout_name: workout.name,
-        description: workout.description,
-        exercises: formattedExercises,
-      });
-    } catch (err) {
-      console.error(err);
-      return reply.status(500).send({ message: 'Erro ao carregar treino ativo.' });
-    }
-  });
+    console.error('Erro ao carregar treino ativo:', err);
+    return reply.status(500).send({ message: 'Erro interno ao carregar o treino.' });
+  }
+});
 
   // Retorna os treinos do próprio usuário na tela principal
   app.get('/workouts', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
