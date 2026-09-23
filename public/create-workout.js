@@ -52,7 +52,6 @@ async function fetchExercises() {
 async function loadWorkoutForEdit() {
   if (!editingWorkoutId) return;
 
-  // Atualiza título/botão na tela se existirem
   const pageTitle = document.querySelector('h1, .page-title');
   if (pageTitle) pageTitle.textContent = 'Editar Ficha de Treino';
 
@@ -61,15 +60,17 @@ async function loadWorkoutForEdit() {
       headers: getAuthHeaders()
     });
 
-    if (!res.ok) throw new Error('Erro ao buscar dados do treino');
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      console.error('Resposta de erro do servidor:', res.status, errorData);
+      throw new Error(errorData.message || `Erro HTTP ${res.status}`);
+    }
 
     const workout = await res.json();
 
-    // Preenche os campos de texto
     document.getElementById('workout-name').value = workout.name || '';
     document.getElementById('workout-desc').value = workout.description || '';
 
-    // Preenche a lista de exercícios
     if (workout.exercises && Array.isArray(workout.exercises)) {
       selectedExercises = workout.exercises.map(ex => ({
         exercise_id: ex.exercise_id || ex.id,
@@ -81,7 +82,7 @@ async function loadWorkoutForEdit() {
     }
   } catch (err) {
     console.error('Erro ao carregar treino para edição:', err);
-    alert('Erro ao carregar os dados da ficha para edição.');
+    alert(`Erro ao carregar os dados da ficha: ${err.message}`);
   }
 }
 

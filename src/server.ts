@@ -911,87 +911,76 @@ app.post('/auth/login', async (request, reply) => {
 
   // Atualizar Ficha Existente (Editar treino)
   app.put('/workouts/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const user_id = request.user?.id;
+  const { id } = request.params as { id: string };
+  const user_id = request.user?.id || (request.user as any)?.sub;
+  const { name, description, exercises } = request.body as {
+    name: string;
+    description?: string;
+    exercises: Array<{ exercise_id: string; target_sets: number; target_reps: number }>;
+  };
 
-    if (!user_id) {
-      return reply.status(401).send({ message: 'Usuário não autenticado.' });
+  if (!user_id) {
+    return reply.status(401).send({ message: 'Usuário não autenticado.' });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // Atualiza nome e descrição da ficha
+    const updateWorkout = await client.query(
+      'UPDATE workouts SET name = $1, description = $2 WHERE id = $3 AND user_id = $4 RETURNING id',
+      [name, description || '', id, user_id]
+    );
+
+    if (updateWorkout.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return reply.status(404).send({ message: 'Treino não encontrado para atualização.' });
     }
 
-    const workoutSchema = z.object({
-      name: z.string().min(1),
-      description: z.string().optional(),
-      exercises: z.array(
-        z.object({
-          exercise_id: z.string().uuid(),
-          target_sets: z.number().int().positive(),
-          target_reps: z.number().int().positive(),
-        })
-      ),
-    });
+    // Remove os exercícios antigos e insere a nova lista
+    await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
 
-    const client = await pool.connect();
-
-    try {
-      const { name, description, exercises } = workoutSchema.parse(request.body);
-
-      const checkRes = await client.query('SELECT user_id FROM workouts WHERE id = $1', [id]);
-      if (checkRes.rows.length === 0) {
-        return reply.status(404).send({ message: 'Treino não encontrado.' });
-      }
-
-      if (checkRes.rows[0].user_id !== user_id) {
-        return reply.status(403).send({ message: 'Sem permissão para editar esta ficha.' });
-      }
-
-      await client.query('BEGIN');
-
-      await client.query(
-        'UPDATE workouts SET name = $1, description = $2 WHERE id = $3 AND user_id = $4',
-        [name, description || '', id, user_id]
-      );
-
-      await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
-
+    if (exercises && exercises.length > 0) {
       for (const ex of exercises) {
         await client.query(
-          'INSERT INTO workout_exercises (workout_id, exercise_id, target_sets, target_reps) VALUES ($1, $2, $3, $4)',
+          'INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps) VALUES ($1, $2, $3, $4)',
           [id, ex.exercise_id, ex.target_sets, ex.target_reps]
         );
       }
-
-      await client.query('COMMIT');
-      return reply.status(200).send({ message: 'Ficha atualizada com sucesso!' });
-    } catch (err) {
-      await client.query('ROLLBACK');
-      console.error(err);
-      return reply.status(400).send({ message: 'Erro ao atualizar ficha de treino.' });
-    } finally {
-      client.release();
     }
-  });
 
-  app.get('/workouts/:id/active', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-  const paramsSchema = z.object({
-    id: z.string().uuid('ID de treino inválido.'),
-  });
+    await client.query('COMMIT');
+    return reply.status(200).send({ message: 'Treino atualizado com sucesso!' });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao atualizar treino:', err);
+    return reply.status(500).send({ message: 'Erro ao atualizar ficha de treino.' });
+  } finally {
+    client.release();
+  }
+});
+
+  app.get('/workouts/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const user_id = request.user?.id || (request.user as any)?.sub;
+
+  if (!user_id) {
+    return reply.status(401).send({ message: 'Usuário não autenticado.' });
+  }
+
+  // Valida o formato do UUID antes da query
+  if (!z.string().uuid().safeParse(id).success) {
+    return reply.status(400).send({ message: 'ID de treino inválido.' });
+  }
 
   try {
-    const { id: workoutId } = paramsSchema.parse(request.params);
-    const userId = request.user?.id;
-
-    if (!userId) {
-      return reply.status(401).send({ message: 'Usuário não autenticado.' });
-    }
-
-    // 1. Busca os detalhes do treino garantindo pertencimento ao usuário
+    // 1. Busca os dados da ficha de treino
     const workoutRes = await pool.query(
-      `
-      SELECT id, name, description, is_template, created_at 
-      FROM workouts 
-      WHERE id = $1 AND user_id = $2
-      `,
-      [workoutId, userId]
+      'SELECT id, name, description FROM workouts WHERE id = $1 AND user_id = $2',
+      [id, user_id]
     );
 
     if (workoutRes.rows.length === 0) {
@@ -1000,38 +989,34 @@ app.post('/auth/login', async (request, reply) => {
 
     const workout = workoutRes.rows[0];
 
-    // 2. Busca os exercícios vinculados fazendo JOIN entre workout_exercises e exercises
+    // 2. Busca os exercícios vinculados a essa ficha
     const exercisesRes = await pool.query(
       `
       SELECT 
-        we.id AS workout_exercise_id,
-        we.sets,
-        we.reps,
-        we.weight,
-        e.id AS exercise_id,
-        e.name AS name,
-        e.target_muscle,
-        e.description
+        we.exercise_id,
+        e.name,
+        we.sets AS target_sets,
+        we.reps AS target_reps
       FROM workout_exercises we
-      INNER JOIN exercises e ON we.exercise_id = e.id
+      JOIN exercises e ON e.id = we.exercise_id
       WHERE we.workout_id = $1
-      ORDER BY we.created_at ASC
       `,
-      [workoutId]
+      [id]
     );
 
     return reply.status(200).send({
-      ...workout,
-      exercises: exercisesRes.rows,
+      id: workout.id,
+      name: workout.name,
+      description: workout.description,
+      exercises: exercisesRes.rows
     });
 
   } catch (err) {
-    if (err instanceof z.ZodError) {
-      return reply.status(400).send({ message: 'ID de treino inválido.' });
-    }
-
-    console.error('Erro ao carregar treino ativo:', err);
-    return reply.status(500).send({ message: 'Erro interno ao carregar o treino.' });
+    console.error('Erro ao buscar detalhes do treino:', err);
+    return reply.status(500).send({ 
+      message: 'Erro interno ao buscar treino.',
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 
