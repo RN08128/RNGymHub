@@ -9,6 +9,9 @@ import { z } from 'zod';
 import { Pool } from 'pg';
 import type { PoolClient } from 'pg';
 import nodemailer from 'nodemailer';
+import dns from 'node:dns';
+
+dns.setDefaultResultOrder('ipv4first');
 
 const app = Fastify({ logger: true });
 
@@ -22,7 +25,7 @@ const transporter = nodemailer.createTransport({
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
-  },
+  }, 
 });
 
 // Declaração de tipos para o payload do JWT na Request
