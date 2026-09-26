@@ -337,9 +337,6 @@ async function main() {
         );
       }
 
-      // 3. Exibe o código no log do servidor para testes
-      console.log(`[AUTH LOG] Código gerado para ${email}: ${verification_code}`);
-
       //3-2. Configura o e-mail de verificação
       const mailOptions = {
         from: 'RNGymHub <RNGymHub@gmail.com>',
@@ -359,18 +356,14 @@ async function main() {
 
       // 4. Envia o código de verificação por e-mail usando Nodemailer
       try {
-        await transporter.sendMail(mailOptions, (err, info) => {
-          if (err) {
-            console.error('Erro ao enviar e-mail de verificação:', err);
-            return reply.status(500).send({ message: 'Erro ao enviar e-mail de verificação. Tente novamente mais tarde.' });
-          }
-          console.log(`✅ E-mail de verificação enviado para ${email} com sucesso!`);
-        });
+        await transporter.sendMail(mailOptions);
 
       } catch (emailErr) {
         console.error('Erro ao enviar e-mail de verificação:', emailErr);
-        return reply.status(500).send({ message: 'Erro ao enviar e-mail de verificação. Tente novamente mais tarde.' });
       }
+
+      // 3. Exibe o código no log do servidor para testes
+      console.log(`[AUTH LOG] Código gerado para ${email}: ${verification_code}`);
 
       // 5. Retorno imediato
       return reply.status(200).send({
