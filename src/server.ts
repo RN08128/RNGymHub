@@ -9,7 +9,6 @@ import { z } from 'zod';
 import { Pool } from 'pg';
 import type { PoolClient } from 'pg';
 import nodemailer from 'nodemailer';
-import { Resend } from 'resend';
 
 const app = Fastify({ logger: true });
 
@@ -18,7 +17,13 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
 // Declaração de tipos para o payload do JWT na Request
 declare module '@fastify/jwt' {
@@ -335,13 +340,12 @@ async function main() {
       // 3. Exibe o código no log do servidor para testes
       console.log(`[AUTH LOG] Código gerado para ${email}: ${verification_code}`);
 
-      // 4. Envia o código de verificação por e-mail usando Resend
-      try {
-        const { data, error } = await resend.emails.send({
-          from: 'RNGymHub <noreply@rngymhub.com>',
-          to: [email],
-          subject: 'Seu Código de Verificação - RNGymHub',
-          html: `
+      //3-2. Configura o e-mail de verificação
+      const mailOptions = {
+        from: 'RNGymHub <RNGymHub@gmail.com>',
+        to: [email],
+        subject: 'Seu Código de Verificação - RNGymHub',
+        html: `
             <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #121212; color: #ffffff; border-radius: 8px;">
               <h2 style="color: #007bff;">Bem-vindo ao RNGymHub, ${name}!</h2>
               <p>Para concluir a verificação da sua conta, utilize o código de verificação abaixo:</p>
@@ -351,16 +355,21 @@ async function main() {
               <p style="color: #aaaaaa; font-size: 13px;">Este código expira em 15 minutos.</p>
             </div>
           `,
+      }
+
+      // 4. Envia o código de verificação por e-mail usando Nodemailer
+      try {
+        await transporter.sendMail(mailOptions, (err, info) => {
+          if (err) {
+            console.error('Erro ao enviar e-mail de verificação:', err);
+            return reply.status(500).send({ message: 'Erro ao enviar e-mail de verificação. Tente novamente mais tarde.' });
+          }
+          console.log(`✅ E-mail de verificação enviado para ${email} com sucesso!`);
         });
 
-        if (error) {
-          console.error('AVISO: Falha no disparo do Resend (E-mail não enviado):', error);
-        } else {
-          console.log(`✅ E-mail de verificação enviado para ${email} com sucesso!`);
-        }
-      } catch (emailError) {
-        const errorMessage = emailError instanceof Error ? emailError.message : String(emailError);
-        console.error('AVISO: Falha na requisição de e-mail (E-mail não enviado):', errorMessage);
+      } catch (emailErr) {
+        console.error('Erro ao enviar e-mail de verificação:', emailErr);
+        return reply.status(500).send({ message: 'Erro ao enviar e-mail de verificação. Tente novamente mais tarde.' });
       }
 
       // 5. Retorno imediato
