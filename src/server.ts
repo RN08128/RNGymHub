@@ -21,15 +21,20 @@ const pool = new Pool({
 });
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: process.env.EMAIL_HOST,
+  port: parseInt(process.env.EMAIL_PORT || '587', 10),
+  secure: false, // true para 465, false para outras portas
+
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  connectionTimeout: 5000, // Tempo limite de conexão em milissegundos
-  socketTimeout: 5000, // Tempo limite de socket em milissegundos
+  connectionTimeout: 8000, // Tempo limite de conexão em milissegundos
+  socketTimeout: 8000, // Tempo limite de socket em milissegundos
+  dnsTimeout: 5000, // Tempo limite de DNS em milissegundos
   tls: {
     rejectUnauthorized: false, // Permite certificados autoassinados
+    servername: process.env.EMAIL_HOST, // Nome do servidor para validação do certificado
   },
 });
 
