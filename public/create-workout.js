@@ -1,4 +1,4 @@
-var API_URL = 'https://rngymhub.onrender.com';
+var API_URL = 'http://localhost:3000';
 let availableExercises = [];
 let selectedExercises = [];
 
@@ -244,7 +244,15 @@ async function saveWorkout(startImmediately = false) {
 
     if (res.ok) {
       if (startImmediately) {
+        // Captura a ID tanto para criação quanto para edição
         const targetId = isEditing ? editingWorkoutId : data.workout_id;
+
+        if (!targetId) {
+          alert('Não foi possível obter a ID do treino para iniciar.');
+          window.location.href = 'workouts.html';
+          return;
+        }
+
         window.location.href = `active-workout.html?id=${targetId}`;
       } else {
         alert(isEditing ? '🎉 Ficha atualizada com sucesso!' : '🎉 Ficha criada com sucesso!');

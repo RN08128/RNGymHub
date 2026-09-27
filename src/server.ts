@@ -9,9 +9,6 @@ import { z } from 'zod';
 import { Pool } from 'pg';
 import type { PoolClient } from 'pg';
 import nodemailer from 'nodemailer';
-import dns from 'node:dns';
-
-dns.setDefaultResultOrder('ipv4first');
 
 const app = Fastify({ logger: true });
 
@@ -21,15 +18,11 @@ const pool = new Pool({
 });
 
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: parseInt(process.env.EMAIL_PORT || '587', 10),
-  secure: false, // true para 465, false para outras portas
-
+  service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  connectionTimeout: 10000,
 });
 
 // Declaração de tipos para o payload do JWT na Request
@@ -248,10 +241,7 @@ async function main() {
   }
 
   await app.register(cors, {
-    origin: [
-      'https://rn-gym-hub.vercel.app', // Domínio do frontend na Vercel
-      'http://localhost:3000',
-    ],
+    origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
@@ -382,96 +372,115 @@ async function main() {
 });
 
   app.post('/auth/verify-code', async (request, reply) => {
-    const verifySchema = z.object({
-      email: z.string().email(),
-      code: z.string().length(6),
-    });
+  // 1. Permite 'code' como string ou número (z.coerce converte números para string automaticamente)
+  const verifySchema = z.object({
+    email: z.string().email(),
+    code: z.coerce.string().length(6),
+  });
 
-    const client = await pool.connect();
+  const client = await pool.connect();
 
-    try {
-      const { email, code } = verifySchema.parse(request.body);
+  try {
+    // Validação dos dados do corpo da requisição
+    const { email, code } = verifySchema.parse(request.body);
 
-      // 1. Busca o registro do usuário pendente com o código válido
-      const userRes = await client.query(
-        `
-      SELECT * FROM users 
+    // 2. Busca o usuário pendente (sem filtrar pela data no SQL para evitar inconsistência de Timezone)
+    const userRes = await client.query(
+      `
+      SELECT id, name, email, verification_code, code_expires_at 
+      FROM users 
       WHERE email = $1 
         AND verification_code = $2 
-        AND is_verified = false 
-        AND code_expires_at > CURRENT_TIMESTAMP
+        AND is_verified = false
       ORDER BY created_at DESC
       LIMIT 1
       `,
-        [email, code]
-      );
+      [email, code]
+    );
 
-      if (userRes.rows.length === 0) {
-        return reply.status(400).send({
-          message: 'Código incorreto, expirado ou e-mail inválido.'
-        });
-      }
+    if (userRes.rows.length === 0) {
+      return reply.status(400).send({
+        message: 'Código incorreto ou e-mail não encontrado.',
+      });
+    }
 
-      const unverifiedUser = userRes.rows[0];
+    const unverifiedUser = userRes.rows[0];
 
-      // 2. Início da transação de ativação
-      await client.query('BEGIN');
+    // 3. Validação do tempo de expiração via JavaScript/Node.js
+    if (new Date() > new Date(unverifiedUser.code_expires_at)) {
+      return reply.status(400).send({
+        message: 'Código de verificação expirado. Solicite um novo cadastro.',
+      });
+    }
 
-      const updatedUserRes = await client.query(
-        `
+    // 4. Início da transação de ativação da conta
+    await client.query('BEGIN');
+
+    // Atualiza a conta ativa
+    const updatedUserRes = await client.query(
+      `
       UPDATE users 
       SET is_verified = true, verification_code = NULL, code_expires_at = NULL
       WHERE id = $1
       RETURNING id, name, email
       `,
-        [unverifiedUser.id]
-      );
+      [unverifiedUser.id]
+    );
 
-      const activeUser = updatedUserRes.rows[0];
+    const activeUser = updatedUserRes.rows[0];
 
-      // 3. Tenta popular exercícios padrão sem derrubar a ativação em caso de erro
-      try {
-        if (typeof populateDefaultExercisesForUser === 'function') {
-          await populateDefaultExercisesForUser(client, activeUser.id);
-        }
-      } catch (exerciseErr) {
-        console.error('AVISO: Falha ao popular exercícios padrão para o usuário:', exerciseErr);
+    // Popula exercícios padrão se a função existir
+    try {
+      if (typeof populateDefaultExercisesForUser === 'function') {
+        await populateDefaultExercisesForUser(client, activeUser.id);
       }
-
-      // 4. Limpa quaisquer contas não verificadas duplicadas com o mesmo e-mail
-      await client.query(
-        'DELETE FROM users WHERE email = $1 AND is_verified = false AND id != $2',
-        [email, activeUser.id]
-      );
-
-      await client.query('COMMIT');
-
-      // 5. Gera o JWT Token (Compatível com @fastify/jwt)
-      const payload = { id: activeUser.id, name: activeUser.name, email: activeUser.email };
-      const token = typeof reply.jwtSign === 'function'
-        ? await reply.jwtSign(payload, { expiresIn: '7d' })
-        : app.jwt.sign(payload, { expiresIn: '7d' });
-
-      return reply.status(200).send({
-        user: activeUser,
-        token,
-        message: 'E-mail verificado com sucesso!',
-      });
-
-    } catch (err) {
-      // Executa ROLLBACK apenas se a transação do banco ainda estiver aberta
-      try {
-        await client.query('ROLLBACK');
-      } catch (rollbackErr) {
-        // Ignora erro de rollback se a conexão já tiver sido encerrada
-      }
-
-      console.error('Erro ao verificar código:', err);
-      return reply.status(500).send({ message: 'Erro interno ao verificar o código.' });
-    } finally {
-      client.release();
+    } catch (exerciseErr) {
+      console.error('AVISO: Falha ao popular exercícios padrão:', exerciseErr);
     }
-  });
+
+    // Limpa quaisquer contas pendentes antigas com este mesmo e-mail
+    await client.query(
+      'DELETE FROM users WHERE email = $1 AND is_verified = false AND id != $2',
+      [email, activeUser.id]
+    );
+
+    // Confirma as alterações no banco de dados
+    await client.query('COMMIT');
+
+    // 5. Geração do Token JWT (compatível com Fastify JWT)
+    const payload = { id: activeUser.id, name: activeUser.name, email: activeUser.email };
+    const token = typeof reply.jwtSign === 'function'
+      ? await reply.jwtSign(payload, { expiresIn: '7d' })
+      : app.jwt.sign(payload, { expiresIn: '7d' });
+
+    return reply.status(200).send({
+      user: activeUser,
+      token,
+      message: 'E-mail verificado com sucesso!',
+    });
+
+  } catch (err) {
+    // Garante ROLLBACK caso ocorra falha durante a transação
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+
+    // Tratamento de erro de validação do Zod vs erro de servidor
+    if (err instanceof z.ZodError) {
+      return reply.status(400).send({
+        message: 'Dados inválidos.',
+        errors: err.issues,
+      });
+    }
+
+    console.error('Erro ao verificar código:', err);
+    return reply.status(500).send({ message: 'Erro interno ao verificar o código.' });
+
+  } finally {
+    // Sempre libera a conexão de volta para o Pool
+    client.release();
+  }
+});
 
   app.post('/auth/login', async (request, reply) => {
     const loginSchema = z.object({
@@ -920,57 +929,64 @@ async function main() {
 
   // Atualizar Ficha Existente (Editar treino)
   app.put('/workouts/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const user_id = request.user?.id || (request.user as any)?.sub;
-    const { name, description, exercises } = request.body as {
-      name: string;
-      description?: string;
-      exercises: Array<{ exercise_id: string; target_sets: number; target_reps: number }>;
-    };
+  const { id } = request.params as { id: string };
+  const user_id = request.user?.id || (request.user as any)?.sub;
+  const { name, description, exercises } = request.body as {
+    name: string;
+    description?: string;
+    exercises: Array<{
+      exercise_id: string;
+      sets?: number;
+      target_sets?: number;
+      reps?: number;
+      target_reps?: number;
+    }>;
+  };
 
-    if (!user_id) {
-      return reply.status(401).send({ message: 'Usuário não autenticado.' });
-    }
+  if (!user_id) {
+    return reply.status(401).send({ message: 'Usuário não autenticado.' });
+  }
 
-    const client = await pool.connect();
+  const client = await pool.connect();
 
-    try {
-      await client.query('BEGIN');
+  try {
+    await client.query('BEGIN');
 
-      // Atualiza nome e descrição da ficha
-      const updateWorkout = await client.query(
-        'UPDATE workouts SET name = $1, description = $2 WHERE id = $3 AND user_id = $4 RETURNING id',
-        [name, description || '', id, user_id]
-      );
+    const updateWorkout = await client.query(
+      'UPDATE workouts SET name = $1, description = $2 WHERE id = $3 AND user_id = $4 RETURNING id',
+      [name, description || '', id, user_id]
+    );
 
-      if (updateWorkout.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return reply.status(404).send({ message: 'Treino não encontrado para atualização.' });
-      }
-
-      // Remove os exercícios antigos e insere a nova lista
-      await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
-
-      if (exercises && exercises.length > 0) {
-        for (const ex of exercises) {
-          await client.query(
-            'INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps) VALUES ($1, $2, $3, $4)',
-            [id, ex.exercise_id, ex.target_sets, ex.target_reps]
-          );
-        }
-      }
-
-      await client.query('COMMIT');
-      return reply.status(200).send({ message: 'Treino atualizado com sucesso!' });
-
-    } catch (err) {
+    if (updateWorkout.rows.length === 0) {
       await client.query('ROLLBACK');
-      console.error('Erro ao atualizar treino:', err);
-      return reply.status(500).send({ message: 'Erro ao atualizar ficha de treino.' });
-    } finally {
-      client.release();
+      return reply.status(404).send({ message: 'Treino não encontrado para atualização.' });
     }
-  });
+
+    await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
+
+    if (exercises && exercises.length > 0) {
+      for (const ex of exercises) {
+        const setsVal = ex.sets || ex.target_sets || 3;
+        const repsVal = ex.reps || ex.target_reps || 10;
+
+        await client.query(
+          'INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps) VALUES ($1, $2, $3, $4)',
+          [id, ex.exercise_id, setsVal, repsVal]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    return reply.status(200).send({ message: 'Treino atualizado com sucesso!' });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao atualizar treino:', err);
+    return reply.status(500).send({ message: 'Erro ao atualizar ficha de treino.' });
+  } finally {
+    client.release();
+  }
+});
 
   app.get('/workouts/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string };
@@ -1230,7 +1246,7 @@ async function main() {
 
 
   // Inicialização do Servidor
-  const PORT = Number(process.env.PORT) || 3333;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.listen({ port: PORT, host: '0.0.0.0' }, (err, address) => {
     if (err) {

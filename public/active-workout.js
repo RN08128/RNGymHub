@@ -1,4 +1,4 @@
-var API_URL = 'https://rngymhub.onrender.com';
+var API_URL = 'http://localhost:3000';
 
 let workoutData = null;
 let startTime = new Date().toISOString();
@@ -23,7 +23,7 @@ async function loadWorkout(id) {
   try {
     const token = getAuthToken();
 
-    const response = await fetch(`${API_URL}/workouts/${id}/active`, {
+    const response = await fetch(`${API_URL}/workouts/${id}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

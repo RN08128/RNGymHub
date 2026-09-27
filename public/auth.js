@@ -1,4 +1,4 @@
-var API_URL = 'https://rngymhub.onrender.com';
+var API_URL = 'http://localhost:3000';
 let registeredEmailPending = localStorage.getItem('@RNGymHub:pendingEmail') || '';
 
 function switchAuthTab(tab) {
