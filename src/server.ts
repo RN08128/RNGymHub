@@ -25,7 +25,7 @@ const transporter = nodemailer.createTransport({
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
-  }, 
+  },
 });
 
 // Declaração de tipos para o payload do JWT na Request
@@ -244,7 +244,10 @@ async function main() {
   }
 
   await app.register(cors, {
-    origin: true,
+    origin: [
+      'https://rn-gym-hub.vercel.app', // Domínio do frontend na Vercel
+      'http://localhost:3000',
+    ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
