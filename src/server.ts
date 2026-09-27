@@ -26,6 +26,11 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  connectionTimeout: 5000, // Tempo limite de conexão em milissegundos
+  socketTimeout: 5000, // Tempo limite de socket em milissegundos
+  tls: {
+    rejectUnauthorized: false, // Permite certificados autoassinados
+  },
 });
 
 // Declaração de tipos para o payload do JWT na Request
@@ -293,94 +298,90 @@ async function main() {
   // ==========================================
 
   app.post('/auth/register-request', async (request, reply) => {
-    const registerSchema = z.object({
-      name: z.string().min(3),
-      email: z.string().email(),
-      password: z.string().min(6),
-    });
+  const registerSchema = z.object({
+    name: z.string().min(3),
+    email: z.string().email(),
+    password: z.string().min(6),
+  });
 
-    try {
-      const { name, email, password } = registerSchema.parse(request.body);
+  try {
+    const { name, email, password } = registerSchema.parse(request.body);
 
-      // 1. Verifica se já existe um utilizador verificado com este e-mail
-      const verifiedUser = await pool.query(
-        'SELECT id FROM users WHERE email = $1 AND is_verified = true',
-        [email]
-      );
+    // 1. Verifica se já existe um utilizador verificado com este e-mail
+    const verifiedUser = await pool.query(
+      'SELECT id FROM users WHERE email = $1 AND is_verified = true',
+      [email]
+    );
 
-      if (verifiedUser.rows.length > 0) {
-        return reply.status(400).send({ message: 'Este e-mail já está em uso por uma conta verificada.' });
-      }
+    if (verifiedUser.rows.length > 0) {
+      return reply.status(400).send({ message: 'Este e-mail já está em uso por uma conta verificada.' });
+    }
 
-      const password_hash = await bcrypt.hash(password, 10);
-      const verification_code = Math.floor(100000 + Math.random() * 900000).toString();
-      const code_expires_at = new Date(Date.now() + 15 * 60 * 1000);
+    const password_hash = await bcrypt.hash(password, 10);
+    const verification_code = Math.floor(100000 + Math.random() * 900000).toString();
+    const code_expires_at = new Date(Date.now() + 15 * 60 * 1000);
 
-      // 2. Procura se já existe um registo pendente (não verificado)
-      const pendingUser = await pool.query(
-        'SELECT id FROM users WHERE email = $1 AND is_verified = false',
-        [email]
-      );
+    // 2. Procura se já existe um registo pendente (não verificado)
+    const pendingUser = await pool.query(
+      'SELECT id FROM users WHERE email = $1 AND is_verified = false',
+      [email]
+    );
 
-      if (pendingUser.rows.length > 0) {
-        // Atualiza os dados, a palavra-passe e o código da conta pendente existente
-        await pool.query(
-          `
+    if (pendingUser.rows.length > 0) {
+      await pool.query(
+        `
         UPDATE users 
         SET name = $1, password_hash = $2, verification_code = $3, code_expires_at = $4, created_at = NOW()
         WHERE id = $5
         `,
-          [name, password_hash, verification_code, code_expires_at, pendingUser.rows[0].id]
-        );
-      } else {
-        // Cria um novo registo se não existir nenhuma conta com este e-mail
-        await pool.query(
-          `
+        [name, password_hash, verification_code, code_expires_at, pendingUser.rows[0].id]
+      );
+    } else {
+      await pool.query(
+        `
         INSERT INTO users (name, email, password_hash, verification_code, code_expires_at, is_verified)
         VALUES ($1, $2, $3, $4, $5, false)
         `,
-          [name, email, password_hash, verification_code, code_expires_at]
-        );
-      }
-
-      //3-2. Configura o e-mail de verificação
-      const mailOptions = {
-        from: 'RNGymHub <RNGymHub@gmail.com>',
-        to: [email],
-        subject: 'Seu Código de Verificação - RNGymHub',
-        html: `
-            <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #121212; color: #ffffff; border-radius: 8px;">
-              <h2 style="color: #007bff;">Bem-vindo ao RNGymHub, ${name}!</h2>
-              <p>Para concluir a verificação da sua conta, utilize o código de verificação abaixo:</p>
-              <div style="background: #1e1e1e; font-size: 28px; font-weight: bold; letter-spacing: 5px; color: #007bff; padding: 15px; text-align: center; border-radius: 6px; margin: 20px 0;">
-                ${verification_code}
-              </div>
-              <p style="color: #aaaaaa; font-size: 13px;">Este código expira em 15 minutos.</p>
-            </div>
-          `,
-      }
-
-      // 4. Envia o código de verificação por e-mail usando Nodemailer
-      try {
-        await transporter.sendMail(mailOptions);
-
-      } catch (emailErr) {
-        console.error('Erro ao enviar e-mail de verificação:', emailErr);
-      }
-
-      // 3. Exibe o código no log do servidor para testes
-      console.log(`[AUTH LOG] Código gerado para ${email}: ${verification_code}`);
-
-      // 5. Retorno imediato
-      return reply.status(200).send({
-        message: 'Código de verificação gerado com sucesso!',
-        email,
-      });
-    } catch (err) {
-      console.error('Erro ao processar cadastro:', err);
-      return reply.status(400).send({ message: 'Erro ao solicitar cadastro. Verifique os dados fornecidos.' });
+        [name, email, password_hash, verification_code, code_expires_at]
+      );
     }
-  });
+
+    // 3. Configura o e-mail de verificação
+    const mailOptions = {
+      from: `"RNGymHub" <${process.env.EMAIL_USER}>`,
+      to: [email],
+      subject: 'Seu Código de Verificação - RNGymHub',
+      html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #121212; color: #ffffff; border-radius: 8px;">
+            <h2 style="color: #007bff;">Bem-vindo ao RNGymHub, ${name}!</h2>
+            <p>Para concluir a verificação da sua conta, utilize o código de verificação abaixo:</p>
+            <div style="background: #1e1e1e; font-size: 28px; font-weight: bold; letter-spacing: 5px; color: #007bff; padding: 15px; text-align: center; border-radius: 6px; margin: 20px 0;">
+              ${verification_code}
+            </div>
+            <p style="color: #aaaaaa; font-size: 13px;">Este código expira em 15 minutos.</p>
+          </div>
+        `,
+    };
+
+    // 4. Dispara o e-mail em SEGUNDO PLANO (Sem o 'await' para responder a requisição na hora)
+    transporter.sendMail(mailOptions)
+      .then(() => console.log(`[EMAIL LOG] E-mail enviado com sucesso para ${email}`))
+      .catch((emailErr) => console.error('❌ Erro ao enviar e-mail de verificação:', emailErr));
+
+    // Log de desenvolvimento
+    console.log(`[AUTH LOG] Código gerado para ${email}: ${verification_code}`);
+
+    // 5. Resposta IMEDIATA para o frontend (Elimina o erro de CORS/Timeout no cliente)
+    return reply.status(200).send({
+      message: 'Código de verificação gerado com sucesso!',
+      email,
+    });
+  } catch (err) {
+    console.error('Erro ao processar cadastro:', err);
+    return reply.status(400).send({ message: 'Erro ao solicitar cadastro. Verifique os dados fornecidos.' });
+  }
+});
+
   app.post('/auth/verify-code', async (request, reply) => {
     const verifySchema = z.object({
       email: z.string().email(),
