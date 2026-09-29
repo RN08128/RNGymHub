@@ -989,61 +989,85 @@ async function main() {
   });
 
   app.get('/workouts/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const user_id = request.user?.id || (request.user as any)?.sub;
+  const { id } = request.params as { id: string };
+  const user_id = request.user?.id || (request.user as any)?.sub;
 
-    if (!user_id) {
-      return reply.status(401).send({ message: 'Usuário não autenticado.' });
+  if (!user_id) {
+    return reply.status(401).send({ message: 'Usuário não autenticado.' });
+  }
+
+  // Valida o formato do UUID antes da query
+  if (!z.string().uuid().safeParse(id).success) {
+    return reply.status(400).send({ message: 'ID de treino inválido.' });
+  }
+
+  try {
+    // 1. Busca os dados da ficha de treino
+    const workoutRes = await pool.query(
+      'SELECT id, name, description FROM workouts WHERE id = $1 AND user_id = $2',
+      [id, user_id]
+    );
+
+    if (workoutRes.rows.length === 0) {
+      return reply.status(404).send({ message: 'Treino não encontrado.' });
     }
 
-    // Valida o formato do UUID antes da query
-    if (!z.string().uuid().safeParse(id).success) {
-      return reply.status(400).send({ message: 'ID de treino inválido.' });
-    }
+    const workout = workoutRes.rows[0];
 
-    try {
-      // 1. Busca os dados da ficha de treino
-      const workoutRes = await pool.query(
-        'SELECT id, name, description FROM workouts WHERE id = $1 AND user_id = $2',
-        [id, user_id]
-      );
-
-      if (workoutRes.rows.length === 0) {
-        return reply.status(404).send({ message: 'Treino não encontrado.' });
-      }
-
-      const workout = workoutRes.rows[0];
-
-      // 2. Busca os exercícios vinculados a essa ficha
-      const exercisesRes = await pool.query(
-        `
+    // 2. Busca os exercícios vinculados e calcula os recordes pessoais (PRs) do usuário
+    const exercisesRes = await pool.query(
+      `
       SELECT 
         we.exercise_id,
         e.name,
+        e.target_muscle,
         we.sets AS target_sets,
-        we.reps AS target_reps
+        we.reps AS target_reps,
+        COALESCE(pr.max_weight, 0)::float AS max_weight,
+        COALESCE(pr.max_volume_set, 0)::float AS max_volume_set
       FROM workout_exercises we
       JOIN exercises e ON e.id = we.exercise_id
+      LEFT JOIN LATERAL (
+        SELECT 
+          MAX(sl.weight) AS max_weight,
+          MAX(sl.weight * sl.reps) AS max_volume_set
+        FROM set_logs sl
+        JOIN workout_logs wl ON wl.id = sl.workout_log_id
+        WHERE sl.exercise_id = we.exercise_id AND wl.user_id = $2
+      ) pr ON true
       WHERE we.workout_id = $1
       `,
-        [id]
-      );
+      [id, user_id]
+    );
 
-      return reply.status(200).send({
-        id: workout.id,
-        name: workout.name,
-        description: workout.description,
-        exercises: exercisesRes.rows
-      });
+    // Mapeia os dados mantendo a estrutura esperada pelo frontend
+    const exercises = exercisesRes.rows.map(row => ({
+      exercise_id: row.exercise_id,
+      name: row.name,
+      target_muscle: row.target_muscle,
+      sets: row.target_sets,
+      reps: row.target_reps,
+      personal_record: {
+        max_weight: row.max_weight,
+        max_volume_set: row.max_volume_set
+      }
+    }));
 
-    } catch (err) {
-      console.error('Erro ao buscar detalhes do treino:', err);
-      return reply.status(500).send({
-        message: 'Erro interno ao buscar treino.',
-        error: err instanceof Error ? err.message : String(err)
-      });
-    }
-  });
+    return reply.status(200).send({
+      id: workout.id,
+      name: workout.name,
+      description: workout.description,
+      exercises
+    });
+
+  } catch (err) {
+    console.error('Erro ao buscar detalhes do treino:', err);
+    return reply.status(500).send({
+      message: 'Erro interno ao buscar treino.',
+      error: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
 
   // Retorna os treinos do próprio usuário na tela principal
   app.get('/workouts', { onRequest: [(app as any).authenticate] }, async (request, reply) => {

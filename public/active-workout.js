@@ -45,7 +45,7 @@ async function loadWorkout(id) {
       description: rawData.description || '',
       exercises: normalizeExercisesData(rawData.exercises || [])
     };
-    
+
     // Atualiza o título na tela
     const titleEl = document.getElementById('workout-title');
     if (titleEl) {
@@ -184,9 +184,8 @@ function toggleCheck(exerciseId, setIndex) {
   const pr = exercise.personal_record || { max_weight: 0, max_volume_set: 0 };
   const setVolume = weight * reps;
 
-  // Regra de Negócio de PRs
-  const isPrWeight = pr.max_weight > 0 ? weight > pr.max_weight : false;
-  const isPrVolume = pr.max_volume_set > 0 ? setVolume > pr.max_volume_set : false;
+  const isPrWeight = pr.max_weight > 0 ? weight > pr.max_weight : weight > 0;
+  const isPrVolume = pr.max_volume_set > 0 ? setVolume > pr.max_volume_set : setVolume > 0;
   const isPr = isPrWeight || isPrVolume;
 
   // Atualiza estado local da série
@@ -254,7 +253,7 @@ async function finishWorkout() {
 
     if (res.ok) {
       document.getElementById('workout-title').innerText = '🏆 Treino Concluído!';
-      
+
       const subtitleEl = document.getElementById('workout-subtitle');
       if (subtitleEl) {
         subtitleEl.innerHTML = `
