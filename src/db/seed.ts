@@ -1,4 +1,5 @@
 import pool from './connection.ts';
+import { seedDefaultExercises } from './seedExercises.ts';
 
 async function seed() {
   const client = await pool.connect();
@@ -7,8 +8,43 @@ async function seed() {
     console.log('🌱 Iniciando o povoamento do banco de dados (Seed)...');
     await client.query('BEGIN');
 
+    // 1. Mapeia e insere os exercícios ajustados
+    const exerciseMap = await seedDefaultExercises();
+    console.log('✅ Exercícios modelos criados/mapeados.');
+
     // -------------------------------------------------------------------------
-    // 1. CRIAR AS DIVISÕES / ROTINAS MODELOS (routine_templates)
+    // 2. FUNÇÃO AUXILIAR PARA VINCULAR EXERCÍCIOS AO TREINO TEMPLATE
+    // -------------------------------------------------------------------------
+    const linkWorkoutExercise = async (
+      workoutId: string, 
+      exerciseName: string, 
+      sets: number = 4, 
+      reps: number = 10, 
+      weight: number = 0
+    ) => {
+      const exerciseId = exerciseMap[exerciseName];
+      if (!exerciseId) {
+        console.warn(`⚠️ Exercício não encontrado para vínculo: "${exerciseName}"`);
+        return;
+      }
+
+      const check = await client.query(
+        `SELECT 1 FROM workout_exercises 
+         WHERE workout_id = $1 AND exercise_id = $2 LIMIT 1`,
+        [workoutId, exerciseId]
+      );
+
+      if (check.rows.length === 0) {
+        await client.query(
+          `INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [workoutId, exerciseId, sets, reps, weight]
+        );
+      }
+    };
+
+    // -------------------------------------------------------------------------
+    // 3. CRIAR AS DIVISÕES / ROTINAS MODELOS (routine_templates)
     // -------------------------------------------------------------------------
     const routinesData = [
       {
@@ -24,7 +60,7 @@ async function seed() {
       {
         name: 'Full Body (Corpo Todo)',
         category: 'Full Body',
-        description: 'Treino de corpo inteiro 3 vezes por semana. Ideal para iniciantes ou rotinas corridas, maximizando a síntese proteica semanal. '
+        description: 'Treino de corpo inteiro 3 vezes por semana. Ideal para iniciantes ou rotinas corridas.'
       },
       {
         name: 'Arnold Split',
@@ -39,14 +75,13 @@ async function seed() {
       {
         name: 'Anterior / Posterior',
         category: 'Anterior / Posterior',
-        description: 'Foco na cadeia anterior (Peito, Quadríceps, Abdômen, Ombro Frontal) alternado com a cadeia posterior (Costas, Isquiotibiais, Glúteos, Panturrilha). '
+        description: 'Foco na cadeia anterior alternado com a cadeia posterior.'
       }
     ];
 
     const routineMap: Record<string, string> = {};
 
     for (const r of routinesData) {
-      // Busca se a rotina já existe no banco
       const checkRoutine = await client.query(
         `SELECT id FROM routine_templates WHERE name = $1 LIMIT 1`,
         [r.name]
@@ -68,7 +103,7 @@ async function seed() {
     console.log('✅ Divisões modelos verificadas/criadas.');
 
     // -------------------------------------------------------------------------
-    // 2. FUNÇÕES AUXILIARES SEM DEPENDÊNCIA DE 'ON CONFLICT'
+    // 4. FUNÇÕES AUXILIARES DE TREINOS E VÍNCULOS DE ROTINA
     // -------------------------------------------------------------------------
     const createWorkoutTemplate = async (name: string, description: string) => {
       const checkRes = await client.query(
@@ -106,19 +141,45 @@ async function seed() {
     };
 
     // -------------------------------------------------------------------------
-    // 3. POPULAR TREINOS E VÍNCULOS
+    // 5. POPULAR TREINOS E EXERCÍCIOS
     // -------------------------------------------------------------------------
 
-    // A. PPL
-    
-
-    // B. Upper / Lower
+    // A. Upper / Lower
     const ulId = routineMap['Upper / Lower (Superior / Inferior)'];
     if (ulId) {
+      // Upper A
       const wUpperA = await createWorkoutTemplate('Upper A (Foco Força)', 'Superiores com ênfase em compostos pesados.');
+      await linkWorkoutExercise(wUpperA, 'Supino Reto com Barra', 4, 8);
+      await linkWorkoutExercise(wUpperA, 'Remada Curvada com Barra', 4, 8);
+      await linkWorkoutExercise(wUpperA, 'Desenvolvimento com Halteres', 4, 8);
+      await linkWorkoutExercise(wUpperA, 'Puxada Frontal com Pegada Pronada', 4, 10);
+      await linkWorkoutExercise(wUpperA, 'Tríceps Pulley com Corda', 2, 12);
+      await linkWorkoutExercise(wUpperA, 'Rosca Martelo com Halteres', 2, 12);
+
+      // Lower A
       const wLowerA = await createWorkoutTemplate('Lower A (Foco Quadríceps)', 'Inferiores com ênfase em Agachamento.');
+      await linkWorkoutExercise(wLowerA, 'Agachamento Livre', 4, 8);
+      await linkWorkoutExercise(wLowerA, 'Leg Press 45', 4, 10);
+      await linkWorkoutExercise(wLowerA, 'Stiff com Halteres', 4, 10);
+      await linkWorkoutExercise(wLowerA, 'Mesa Flexora', 4, 12);
+      await linkWorkoutExercise(wLowerA, 'Panturrilha em Pé', 4, 15);
+
+      // Upper B
       const wUpperB = await createWorkoutTemplate('Upper B (Foco Hipertrofia)', 'Superiores com maior volume de braços/deltoides.');
-      const wLowerB = await createWorkoutTemplate('Lower B (Foco Posterior)', 'Inferiores com ênfase em Levantamento Terra e Stiff.');
+      await linkWorkoutExercise(wUpperB, 'Supino Inclinado com Halteres', 4, 10);
+      await linkWorkoutExercise(wUpperB, 'Puxada Frontal com Pegada Neutra', 4, 10);
+      await linkWorkoutExercise(wUpperB, 'Elevação Lateral com Halteres', 4, 12);
+      await linkWorkoutExercise(wUpperB, 'Crucifixo na Máquina', 4, 12);
+      await linkWorkoutExercise(wUpperB, 'Rosca Direta com Barra', 3, 12);
+      await linkWorkoutExercise(wUpperB, 'Tríceps Testa com Barra', 3, 12);
+
+      // Lower B
+      const wLowerB = await createWorkoutTemplate('Lower B (Foco Posterior)', 'Inferiores com ênfase em Posterior e Stiff.');
+      await linkWorkoutExercise(wLowerB, 'Stiff com Barra', 4, 8);
+      await linkWorkoutExercise(wLowerB, 'Leg Press Horizontal', 4, 10);
+      await linkWorkoutExercise(wLowerB, 'Cadeira Extensora', 4, 12);
+      await linkWorkoutExercise(wLowerB, 'Mesa Flexora', 4, 12);
+      await linkWorkoutExercise(wLowerB, 'Panturrilha Sentado', 4, 15);
 
       await linkRoutineWorkout(ulId, wUpperA, 1);
       await linkRoutineWorkout(ulId, wLowerA, 2);
@@ -126,65 +187,71 @@ async function seed() {
       await linkRoutineWorkout(ulId, wLowerB, 4);
     }
 
-    // C. Full Body
-    const fbId = routineMap['Full Body (Corpo Todo)'];
-    if (fbId) {
-      const wFbA = await createWorkoutTemplate('Full Body A', 'Estimulo global A.');
-      const wFbB = await createWorkoutTemplate('Full Body B', 'Estimulo global B.');
-      const wFbC = await createWorkoutTemplate('Full Body C', 'Estimulo global C.');
+    // B. PPL & PPL + Upper / Lower
+    const wPush = await createWorkoutTemplate('Push (Peito/Ombro/Tríceps)', 'Dia 1: Empurrar foco força.');
+    await linkWorkoutExercise(wPush, 'Supino Reto com Barra', 4, 8);
+    await linkWorkoutExercise(wPush, 'Supino Inclinado com Halteres', 4, 10);
+    await linkWorkoutExercise(wPush, 'Desenvolvimento com Halteres', 3, 10);
+    await linkWorkoutExercise(wPush, 'Elevação Lateral com Halteres', 4, 12);
+    await linkWorkoutExercise(wPush, 'Tríceps Pulley com Corda', 4, 12);
 
-      await linkRoutineWorkout(fbId, wFbA, 1);
-      await linkRoutineWorkout(fbId, wFbB, 2);
-      await linkRoutineWorkout(fbId, wFbC, 3);
-    }
+    const wPull = await createWorkoutTemplate('Pull (Costas/Bíceps)', 'Dia 2: Puxar foco força.');
+    await linkWorkoutExercise(wPull, 'Puxada Frontal com Pegada Pronada', 4, 10);
+    await linkWorkoutExercise(wPull, 'Remada Curvada com Barra', 4, 8);
+    await linkWorkoutExercise(wPull, 'Remada Unilateral com Halteres', 3, 12);
+    await linkWorkoutExercise(wPull, 'Rosca Direta com Barra', 4, 10);
+    await linkWorkoutExercise(wPull, 'Rosca Martelo com Halteres', 3, 12);
 
-    // D. Arnold Split
-    const arnoldId = routineMap['Arnold Split'];
-    if (arnoldId) {
-      const wChestBack = await createWorkoutTemplate('Peito & Costas', 'Super-sets de antagonistas estilo Arnold.');
-      const wArmsShoulders = await createWorkoutTemplate('Ombros & Braços', 'Foco isolado em deltoides, bíceps e tríceps.');
-      const wLegsAbs = await createWorkoutTemplate('Pernas & Abdômen', 'Treino de membros inferiores e core.');
+    const wLegs = await createWorkoutTemplate('Legs (Pernas Completo)', 'Dia 3: Membros inferiores completo.');
+    await linkWorkoutExercise(wLegs, 'Agachamento Livre', 4, 8);
+    await linkWorkoutExercise(wLegs, 'Leg Press 45', 4, 10);
+    await linkWorkoutExercise(wLegs, 'Stiff com Halteres', 4, 10);
+    await linkWorkoutExercise(wLegs, 'Mesa Flexora', 3, 12);
+    await linkWorkoutExercise(wLegs, 'Panturrilha em Pé', 4, 15);
 
-      await linkRoutineWorkout(arnoldId, wChestBack, 1);
-      await linkRoutineWorkout(arnoldId, wArmsShoulders, 2);
-      await linkRoutineWorkout(arnoldId, wLegsAbs, 3);
-    }
-
-    // E. PPL + Upper / Lower (5 Dias)
-    const pplUlId = routineMap['PPL + Upper / Lower (5 Dias)'];
-    if (pplUlId) {
-      const wPush = await createWorkoutTemplate('Push (Peito/Ombro/Tríceps)', 'Dia 1: Empurrar foco força.');
-      const wPull = await createWorkoutTemplate('Pull (Costas/Bíceps)', 'Dia 2: Puxar foco força.');
-      const wLegs = await createWorkoutTemplate('Legs (Pernas Completo)', 'Dia 3: Membros inferiores completo.');
-      const wUpper5 = await createWorkoutTemplate('Upper General', 'Dia 4: Membros superiores volume/hipertrofia.');
-      const wLower5 = await createWorkoutTemplate('Lower General', 'Dia 5: Membros inferiores volume/hipertrofia.');
-
-      await linkRoutineWorkout(pplUlId, wPush, 1);
-      await linkRoutineWorkout(pplUlId, wPull, 2);
-      await linkRoutineWorkout(pplUlId, wLegs, 3);
-      await linkRoutineWorkout(pplUlId, wUpper5, 4);
-      await linkRoutineWorkout(pplUlId, wLower5, 5);
-
-      const pplId = routineMap['PPL (Push / Pull / Legs)'];
+    const pplId = routineMap['PPL (Push / Pull / Legs)'];
     if (pplId) {
       await linkRoutineWorkout(pplId, wPush, 1);
       await linkRoutineWorkout(pplId, wPull, 2);
       await linkRoutineWorkout(pplId, wLegs, 3);
     }
+
+    const pplUlId = routineMap['PPL + Upper / Lower (5 Dias)'];
+    if (pplUlId) {
+      const checkUpperA = await client.query(`SELECT id FROM workouts WHERE name = 'Upper A (Foco Força)' AND is_template = true LIMIT 1`);
+      const checkLowerA = await client.query(`SELECT id FROM workouts WHERE name = 'Lower A (Foco Quadríceps)' AND is_template = true LIMIT 1`);
+
+      await linkRoutineWorkout(pplUlId, wPush, 1);
+      await linkRoutineWorkout(pplUlId, wPull, 2);
+      await linkRoutineWorkout(pplUlId, wLegs, 3);
+      if (checkUpperA.rows.length > 0) await linkRoutineWorkout(pplUlId, checkUpperA.rows[0].id, 4);
+      if (checkLowerA.rows.length > 0) await linkRoutineWorkout(pplUlId, checkLowerA.rows[0].id, 5);
     }
 
-    // F. Anterior / Posterior
-    const antPostId = routineMap['Anterior / Posterior'];
-    if (antPostId) {
-      const wAntA = await createWorkoutTemplate('Anterior A (Peito/Quadríceps/Ombro Frontal)', 'Foco na cadeia frontal principal.');
-      const wPostA = await createWorkoutTemplate('Posterior A (Costas/Isquiotibiais/Glúteos/Panturrilha)', 'Foco na cadeia posterior principal.');
-      const wAntB = await createWorkoutTemplate('Anterior B (Peito/Quadríceps/Tríceps/Abdômen)', 'Segundo estímulo da cadeia frontal.');
-      const wPostB = await createWorkoutTemplate('Posterior B (Costas/Isquiotibiais/Bíceps/Ombro Posterior)', 'Segundo estímulo da cadeia posterior.');
+    // C. Full Body
+    const fbId = routineMap['Full Body (Corpo Todo)'];
+    if (fbId) {
+      const wFbA = await createWorkoutTemplate('Full Body A', 'Estímulo global A.');
+      await linkWorkoutExercise(wFbA, 'Agachamento Livre', 3, 8);
+      await linkWorkoutExercise(wFbA, 'Supino Reto com Barra', 3, 8);
+      await linkWorkoutExercise(wFbA, 'Remada Curvada com Barra', 3, 8);
+      await linkWorkoutExercise(wFbA, 'Elevação Lateral com Halteres', 3, 12);
 
-      await linkRoutineWorkout(antPostId, wAntA, 1);
-      await linkRoutineWorkout(antPostId, wPostA, 2);
-      await linkRoutineWorkout(antPostId, wAntB, 3);
-      await linkRoutineWorkout(antPostId, wPostB, 4);
+      const wFbB = await createWorkoutTemplate('Full Body B', 'Estímulo global B.');
+      await linkWorkoutExercise(wFbB, 'Stiff com Barra', 3, 8);
+      await linkWorkoutExercise(wFbB, 'Desenvolvimento com Halteres', 3, 8);
+      await linkWorkoutExercise(wFbB, 'Puxada Frontal com Pegada Pronada', 3, 10);
+      await linkWorkoutExercise(wFbB, 'Leg Press 45', 3, 10);
+
+      const wFbC = await createWorkoutTemplate('Full Body C', 'Estímulo global C.');
+      await linkWorkoutExercise(wFbC, 'Supino Inclinado com Halteres', 3, 10);
+      await linkWorkoutExercise(wFbC, 'Stiff com Halteres', 3, 10);
+      await linkWorkoutExercise(wFbC, 'Remada Unilateral com Halteres', 3, 10);
+      await linkWorkoutExercise(wFbC, 'Cadeira Extensora', 3, 10);
+
+      await linkRoutineWorkout(fbId, wFbA, 1);
+      await linkRoutineWorkout(fbId, wFbB, 2);
+      await linkRoutineWorkout(fbId, wFbC, 3);
     }
 
     await client.query('COMMIT');

@@ -8,11 +8,11 @@ export const personalRecordSchema = z.object({
 
 // Schema da resposta do treino pré-carregado
 export const getActiveWorkoutResponseSchema = z.object({
-  workout_id: z.string(),
+  workout_id: z.string().uuid(),
   workout_name: z.string(),
   exercises: z.array(
     z.object({
-      exercise_id: z.string(),
+      exercise_id: z.string().uuid(),
       name: z.string(),
       target_muscle: z.string(),
       image_url: z.string().nullable(),
@@ -29,12 +29,12 @@ export const getActiveWorkoutResponseSchema = z.object({
 
 // Schema do payload enviado ao finalizar o treino
 export const saveWorkoutLogSchema = z.object({
-  workout_id: z.string(),
+  workout_id: z.string().uuid(),
   start_time: z.string().datetime(),
   end_time: z.string().datetime(),
   logs: z.array(
     z.object({
-      exercise_id: z.string(),
+      exercise_id: z.string().uuid(), // DEVE corresponder a exercises.id
       set_number: z.number(),
       weight: z.number().min(0),
       reps: z.number().min(1),
