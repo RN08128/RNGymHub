@@ -287,60 +287,60 @@ async function main() {
   // ==========================================
 
   app.post('/auth/register-request', async (request, reply) => {
-  const registerSchema = z.object({
-    name: z.string().min(3),
-    email: z.string().email(),
-    password: z.string().min(6),
-  });
+    const registerSchema = z.object({
+      name: z.string().min(3),
+      email: z.string().email(),
+      password: z.string().min(6),
+    });
 
-  try {
-    const { name, email, password } = registerSchema.parse(request.body);
+    try {
+      const { name, email, password } = registerSchema.parse(request.body);
 
-    // 1. Verifica se já existe um utilizador verificado com este e-mail
-    const verifiedUser = await pool.query(
-      'SELECT id FROM users WHERE email = $1 AND is_verified = true',
-      [email]
-    );
+      // 1. Verifica se já existe um utilizador verificado com este e-mail
+      const verifiedUser = await pool.query(
+        'SELECT id FROM users WHERE email = $1 AND is_verified = true',
+        [email]
+      );
 
-    if (verifiedUser.rows.length > 0) {
-      return reply.status(400).send({ message: 'Este e-mail já está em uso por uma conta verificada.' });
-    }
+      if (verifiedUser.rows.length > 0) {
+        return reply.status(400).send({ message: 'Este e-mail já está em uso por uma conta verificada.' });
+      }
 
-    const password_hash = await bcrypt.hash(password, 10);
-    const verification_code = Math.floor(100000 + Math.random() * 900000).toString();
-    const code_expires_at = new Date(Date.now() + 15 * 60 * 1000);
+      const password_hash = await bcrypt.hash(password, 10);
+      const verification_code = Math.floor(100000 + Math.random() * 900000).toString();
+      const code_expires_at = new Date(Date.now() + 15 * 60 * 1000);
 
-    // 2. Procura se já existe um registo pendente (não verificado)
-    const pendingUser = await pool.query(
-      'SELECT id FROM users WHERE email = $1 AND is_verified = false',
-      [email]
-    );
+      // 2. Procura se já existe um registo pendente (não verificado)
+      const pendingUser = await pool.query(
+        'SELECT id FROM users WHERE email = $1 AND is_verified = false',
+        [email]
+      );
 
-    if (pendingUser.rows.length > 0) {
-      await pool.query(
-        `
+      if (pendingUser.rows.length > 0) {
+        await pool.query(
+          `
         UPDATE users 
         SET name = $1, password_hash = $2, verification_code = $3, code_expires_at = $4, created_at = NOW()
         WHERE id = $5
         `,
-        [name, password_hash, verification_code, code_expires_at, pendingUser.rows[0].id]
-      );
-    } else {
-      await pool.query(
-        `
+          [name, password_hash, verification_code, code_expires_at, pendingUser.rows[0].id]
+        );
+      } else {
+        await pool.query(
+          `
         INSERT INTO users (name, email, password_hash, verification_code, code_expires_at, is_verified)
         VALUES ($1, $2, $3, $4, $5, false)
         `,
-        [name, email, password_hash, verification_code, code_expires_at]
-      );
-    }
+          [name, email, password_hash, verification_code, code_expires_at]
+        );
+      }
 
-    // 3. Configura o e-mail de verificação
-    const mailOptions = {
-      from: `"RNGymHub" <${process.env.EMAIL_USER}>`,
-      to: [email],
-      subject: 'Seu Código de Verificação - RNGymHub',
-      html: `
+      // 3. Configura o e-mail de verificação
+      const mailOptions = {
+        from: `"RNGymHub" <${process.env.EMAIL_USER}>`,
+        to: [email],
+        subject: 'Seu Código de Verificação - RNGymHub',
+        html: `
           <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #121212; color: #ffffff; border-radius: 8px;">
             <h2 style="color: #007bff;">Bem-vindo ao RNGymHub, ${name}!</h2>
             <p>Para concluir a verificação da sua conta, utilize o código de verificação abaixo:</p>
@@ -350,43 +350,43 @@ async function main() {
             <p style="color: #aaaaaa; font-size: 13px;">Este código expira em 15 minutos.</p>
           </div>
         `,
-    };
+      };
 
-    // 4. Dispara o e-mail em SEGUNDO PLANO (Sem o 'await' para responder a requisição na hora)
-    transporter.sendMail(mailOptions)
-      .then(() => console.log(`[EMAIL LOG] E-mail enviado com sucesso para ${email}`))
-      .catch((emailErr) => console.error('❌ Erro ao enviar e-mail de verificação:', emailErr));
+      // 4. Dispara o e-mail em SEGUNDO PLANO (Sem o 'await' para responder a requisição na hora)
+      transporter.sendMail(mailOptions)
+        .then(() => console.log(`[EMAIL LOG] E-mail enviado com sucesso para ${email}`))
+        .catch((emailErr) => console.error('❌ Erro ao enviar e-mail de verificação:', emailErr));
 
-    // Log de desenvolvimento
-    console.log(`[AUTH LOG] Código gerado para ${email}: ${verification_code}`);
+      // Log de desenvolvimento
+      console.log(`[AUTH LOG] Código gerado para ${email}: ${verification_code}`);
 
-    // 5. Resposta IMEDIATA para o frontend (Elimina o erro de CORS/Timeout no cliente)
-    return reply.status(200).send({
-      message: 'Código de verificação gerado com sucesso!',
-      email,
-    });
-  } catch (err) {
-    console.error('Erro ao processar cadastro:', err);
-    return reply.status(400).send({ message: 'Erro ao solicitar cadastro. Verifique os dados fornecidos.' });
-  }
-});
-
-  app.post('/auth/verify-code', async (request, reply) => {
-  // 1. Permite 'code' como string ou número (z.coerce converte números para string automaticamente)
-  const verifySchema = z.object({
-    email: z.string().email(),
-    code: z.coerce.string().length(6),
+      // 5. Resposta IMEDIATA para o frontend (Elimina o erro de CORS/Timeout no cliente)
+      return reply.status(200).send({
+        message: 'Código de verificação gerado com sucesso!',
+        email,
+      });
+    } catch (err) {
+      console.error('Erro ao processar cadastro:', err);
+      return reply.status(400).send({ message: 'Erro ao solicitar cadastro. Verifique os dados fornecidos.' });
+    }
   });
 
-  const client = await pool.connect();
+  app.post('/auth/verify-code', async (request, reply) => {
+    // 1. Permite 'code' como string ou número (z.coerce converte números para string automaticamente)
+    const verifySchema = z.object({
+      email: z.string().email(),
+      code: z.coerce.string().length(6),
+    });
 
-  try {
-    // Validação dos dados do corpo da requisição
-    const { email, code } = verifySchema.parse(request.body);
+    const client = await pool.connect();
 
-    // 2. Busca o usuário pendente (sem filtrar pela data no SQL para evitar inconsistência de Timezone)
-    const userRes = await client.query(
-      `
+    try {
+      // Validação dos dados do corpo da requisição
+      const { email, code } = verifySchema.parse(request.body);
+
+      // 2. Busca o usuário pendente (sem filtrar pela data no SQL para evitar inconsistência de Timezone)
+      const userRes = await client.query(
+        `
       SELECT id, name, email, verification_code, code_expires_at 
       FROM users 
       WHERE email = $1 
@@ -395,92 +395,92 @@ async function main() {
       ORDER BY created_at DESC
       LIMIT 1
       `,
-      [email, code]
-    );
+        [email, code]
+      );
 
-    if (userRes.rows.length === 0) {
-      return reply.status(400).send({
-        message: 'Código incorreto ou e-mail não encontrado.',
-      });
-    }
+      if (userRes.rows.length === 0) {
+        return reply.status(400).send({
+          message: 'Código incorreto ou e-mail não encontrado.',
+        });
+      }
 
-    const unverifiedUser = userRes.rows[0];
+      const unverifiedUser = userRes.rows[0];
 
-    // 3. Validação do tempo de expiração via JavaScript/Node.js
-    if (new Date() > new Date(unverifiedUser.code_expires_at)) {
-      return reply.status(400).send({
-        message: 'Código de verificação expirado. Solicite um novo cadastro.',
-      });
-    }
+      // 3. Validação do tempo de expiração via JavaScript/Node.js
+      if (new Date() > new Date(unverifiedUser.code_expires_at)) {
+        return reply.status(400).send({
+          message: 'Código de verificação expirado. Solicite um novo cadastro.',
+        });
+      }
 
-    // 4. Início da transação de ativação da conta
-    await client.query('BEGIN');
+      // 4. Início da transação de ativação da conta
+      await client.query('BEGIN');
 
-    // Atualiza a conta ativa
-    const updatedUserRes = await client.query(
-      `
+      // Atualiza a conta ativa
+      const updatedUserRes = await client.query(
+        `
       UPDATE users 
       SET is_verified = true, verification_code = NULL, code_expires_at = NULL
       WHERE id = $1
       RETURNING id, name, email
       `,
-      [unverifiedUser.id]
-    );
+        [unverifiedUser.id]
+      );
 
-    const activeUser = updatedUserRes.rows[0];
+      const activeUser = updatedUserRes.rows[0];
 
-    // Popula exercícios padrão se a função existir
-    try {
-      if (typeof populateDefaultExercisesForUser === 'function') {
-        await populateDefaultExercisesForUser(client, activeUser.id);
+      // Popula exercícios padrão se a função existir
+      try {
+        if (typeof populateDefaultExercisesForUser === 'function') {
+          await populateDefaultExercisesForUser(client, activeUser.id);
+        }
+      } catch (exerciseErr) {
+        console.error('AVISO: Falha ao popular exercícios padrão:', exerciseErr);
       }
-    } catch (exerciseErr) {
-      console.error('AVISO: Falha ao popular exercícios padrão:', exerciseErr);
-    }
 
-    // Limpa quaisquer contas pendentes antigas com este mesmo e-mail
-    await client.query(
-      'DELETE FROM users WHERE email = $1 AND is_verified = false AND id != $2',
-      [email, activeUser.id]
-    );
+      // Limpa quaisquer contas pendentes antigas com este mesmo e-mail
+      await client.query(
+        'DELETE FROM users WHERE email = $1 AND is_verified = false AND id != $2',
+        [email, activeUser.id]
+      );
 
-    // Confirma as alterações no banco de dados
-    await client.query('COMMIT');
+      // Confirma as alterações no banco de dados
+      await client.query('COMMIT');
 
-    // 5. Geração do Token JWT (compatível com Fastify JWT)
-    const payload = { id: activeUser.id, name: activeUser.name, email: activeUser.email };
-    const token = typeof reply.jwtSign === 'function'
-      ? await reply.jwtSign(payload, { expiresIn: '7d' })
-      : app.jwt.sign(payload, { expiresIn: '7d' });
+      // 5. Geração do Token JWT (compatível com Fastify JWT)
+      const payload = { id: activeUser.id, name: activeUser.name, email: activeUser.email };
+      const token = typeof reply.jwtSign === 'function'
+        ? await reply.jwtSign(payload, { expiresIn: '7d' })
+        : app.jwt.sign(payload, { expiresIn: '7d' });
 
-    return reply.status(200).send({
-      user: activeUser,
-      token,
-      message: 'E-mail verificado com sucesso!',
-    });
-
-  } catch (err) {
-    // Garante ROLLBACK caso ocorra falha durante a transação
-    try {
-      await client.query('ROLLBACK');
-    } catch (_) {}
-
-    // Tratamento de erro de validação do Zod vs erro de servidor
-    if (err instanceof z.ZodError) {
-      return reply.status(400).send({
-        message: 'Dados inválidos.',
-        errors: err.issues,
+      return reply.status(200).send({
+        user: activeUser,
+        token,
+        message: 'E-mail verificado com sucesso!',
       });
+
+    } catch (err) {
+      // Garante ROLLBACK caso ocorra falha durante a transação
+      try {
+        await client.query('ROLLBACK');
+      } catch (_) { }
+
+      // Tratamento de erro de validação do Zod vs erro de servidor
+      if (err instanceof z.ZodError) {
+        return reply.status(400).send({
+          message: 'Dados inválidos.',
+          errors: err.issues,
+        });
+      }
+
+      console.error('Erro ao verificar código:', err);
+      return reply.status(500).send({ message: 'Erro interno ao verificar o código.' });
+
+    } finally {
+      // Sempre libera a conexão de volta para o Pool
+      client.release();
     }
-
-    console.error('Erro ao verificar código:', err);
-    return reply.status(500).send({ message: 'Erro interno ao verificar o código.' });
-
-  } finally {
-    // Sempre libera a conexão de volta para o Pool
-    client.release();
-  }
-});
+  });
 
   app.post('/auth/login', async (request, reply) => {
     const loginSchema = z.object({
@@ -929,64 +929,64 @@ async function main() {
 
   // Atualizar Ficha Existente (Editar treino)
   app.put('/workouts/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-  const { id } = request.params as { id: string };
-  const user_id = request.user?.id || (request.user as any)?.sub;
-  const { name, description, exercises } = request.body as {
-    name: string;
-    description?: string;
-    exercises: Array<{
-      exercise_id: string;
-      sets?: number;
-      target_sets?: number;
-      reps?: number;
-      target_reps?: number;
-    }>;
-  };
+    const { id } = request.params as { id: string };
+    const user_id = request.user?.id || (request.user as any)?.sub;
+    const { name, description, exercises } = request.body as {
+      name: string;
+      description?: string;
+      exercises: Array<{
+        exercise_id: string;
+        sets?: number;
+        target_sets?: number;
+        reps?: number;
+        target_reps?: number;
+      }>;
+    };
 
-  if (!user_id) {
-    return reply.status(401).send({ message: 'Usuário não autenticado.' });
-  }
-
-  const client = await pool.connect();
-
-  try {
-    await client.query('BEGIN');
-
-    const updateWorkout = await client.query(
-      'UPDATE workouts SET name = $1, description = $2 WHERE id = $3 AND user_id = $4 RETURNING id',
-      [name, description || '', id, user_id]
-    );
-
-    if (updateWorkout.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return reply.status(404).send({ message: 'Treino não encontrado para atualização.' });
+    if (!user_id) {
+      return reply.status(401).send({ message: 'Usuário não autenticado.' });
     }
 
-    await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
+    const client = await pool.connect();
 
-    if (exercises && exercises.length > 0) {
-      for (const ex of exercises) {
-        const setsVal = ex.sets || ex.target_sets || 3;
-        const repsVal = ex.reps || ex.target_reps || 10;
+    try {
+      await client.query('BEGIN');
 
-        await client.query(
-          'INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps) VALUES ($1, $2, $3, $4)',
-          [id, ex.exercise_id, setsVal, repsVal]
-        );
+      const updateWorkout = await client.query(
+        'UPDATE workouts SET name = $1, description = $2 WHERE id = $3 AND user_id = $4 RETURNING id',
+        [name, description || '', id, user_id]
+      );
+
+      if (updateWorkout.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return reply.status(404).send({ message: 'Treino não encontrado para atualização.' });
       }
+
+      await client.query('DELETE FROM workout_exercises WHERE workout_id = $1', [id]);
+
+      if (exercises && exercises.length > 0) {
+        for (const ex of exercises) {
+          const setsVal = ex.sets || ex.target_sets || 3;
+          const repsVal = ex.reps || ex.target_reps || 10;
+
+          await client.query(
+            'INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps) VALUES ($1, $2, $3, $4)',
+            [id, ex.exercise_id, setsVal, repsVal]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      return reply.status(200).send({ message: 'Treino atualizado com sucesso!' });
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('Erro ao atualizar treino:', err);
+      return reply.status(500).send({ message: 'Erro ao atualizar ficha de treino.' });
+    } finally {
+      client.release();
     }
-
-    await client.query('COMMIT');
-    return reply.status(200).send({ message: 'Treino atualizado com sucesso!' });
-
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Erro ao atualizar treino:', err);
-    return reply.status(500).send({ message: 'Erro ao atualizar ficha de treino.' });
-  } finally {
-    client.release();
-  }
-});
+  });
 
   app.get('/workouts/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string };
@@ -1133,12 +1133,17 @@ async function main() {
   // ROTAS DE EXECUÇÃO E HISTÓRICO DE TREINOS
   // ==========================================
 
+  // 1. SALVAR EXECUÇÃO E LOGS DE TREINO
   app.post('/workouts/log', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
     const { workout_id, start_time, end_time, started_at, ended_at, completed_at, logs } = request.body as any;
-    const user_id = request.user?.id;
+    const user_id = request.user?.id || (request.user as any)?.sub;
 
     if (!user_id) {
       return reply.status(401).send({ message: 'Usuário não autenticado.' });
+    }
+
+    if (!workout_id || !Array.isArray(logs) || logs.length === 0) {
+      return reply.status(400).send({ message: 'Dados de treino ou logs inválidos.' });
     }
 
     const client = await pool.connect();
@@ -1149,33 +1154,47 @@ async function main() {
       const startTimeVal = started_at || start_time || new Date().toISOString();
       const endTimeVal = ended_at || completed_at || end_time || new Date().toISOString();
 
+      // Registra a sessão do treino
       const logRes = await client.query(
         `
-        INSERT INTO workout_logs (workout_id, user_id, started_at, ended_at)
-        VALUES ($1, $2, $3, $4)
-        RETURNING id
-        `,
+      INSERT INTO workout_logs (workout_id, user_id, started_at, ended_at)
+      VALUES ($1, $2, $3, $4)
+      RETURNING id
+      `,
         [workout_id, user_id, startTimeVal, endTimeVal]
       );
 
       const workoutLogId = logRes.rows[0].id;
 
+      // Registra cada série executada
       for (const log of logs) {
         await client.query(
           `
-          INSERT INTO set_logs (workout_log_id, exercise_id, set_number, weight, reps, is_pr_weight, is_pr_volume)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-          `,
-          [workoutLogId, log.exercise_id, log.set_number, log.weight, log.reps, log.is_pr_weight, log.is_pr_volume]
+        INSERT INTO set_logs (workout_log_id, exercise_id, set_number, weight, reps, is_pr_weight, is_pr_volume)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `,
+          [
+            workoutLogId,
+            log.exercise_id,
+            log.set_number,
+            log.weight || 0,
+            log.reps || 0,
+            Boolean(log.is_pr_weight),
+            Boolean(log.is_pr_volume)
+          ]
         );
       }
 
       await client.query('COMMIT');
-      return reply.status(201).send({ message: 'Treino e logs salvos com sucesso!' });
+      return reply.status(201).send({
+        message: 'Treino e logs salvos com sucesso!',
+        workout_log_id: workoutLogId
+      });
+
     } catch (err) {
       await client.query('ROLLBACK');
-      console.error(err);
-      return reply.status(500).send({ message: 'Erro ao salvar logs do treino.' });
+      console.error('Erro ao salvar logs do treino:', err);
+      return reply.status(500).send({ message: 'Erro interno ao salvar os logs do treino.' });
     } finally {
       client.release();
     }
@@ -1183,7 +1202,7 @@ async function main() {
 
   app.get('/history', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
     try {
-      const user_id = request.user?.id;
+      const user_id = request.user?.id || (request.user as any)?.sub;
 
       if (!user_id) {
         return reply.status(401).send({ message: 'Usuário não autenticado.' });
@@ -1191,31 +1210,37 @@ async function main() {
 
       const result = await pool.query(
         `
-        SELECT 
-          wl.id AS session_id,
-          w.name AS workout_name,
-          COALESCE(wl.started_at, wl.created_at, CURRENT_TIMESTAMP) AS start_time,
-          COUNT(sl.id) AS total_sets,
-          COALESCE(SUM(CASE WHEN sl.is_pr_weight OR sl.is_pr_volume THEN 1 ELSE 0 END), 0) AS pr_count
-        FROM workout_logs wl
-        JOIN workouts w ON w.id = wl.workout_id
-        LEFT JOIN set_logs sl ON sl.workout_log_id = wl.id
-        WHERE wl.user_id = $1
-        GROUP BY wl.id, w.name, wl.started_at, wl.created_at
-        ORDER BY wl.started_at DESC
-        `,
+      SELECT 
+        wl.id AS session_id,
+        w.name AS workout_name,
+        COALESCE(wl.started_at, wl.created_at, CURRENT_TIMESTAMP) AS start_time,
+        COUNT(sl.id)::int AS total_sets,
+        COALESCE(SUM(CASE WHEN sl.is_pr_weight OR sl.is_pr_volume THEN 1 ELSE 0 END), 0)::int AS pr_count
+      FROM workout_logs wl
+      JOIN workouts w ON w.id = wl.workout_id
+      LEFT JOIN set_logs sl ON sl.workout_log_id = wl.id
+      WHERE wl.user_id = $1
+      GROUP BY wl.id, w.name, wl.started_at, wl.created_at
+      ORDER BY wl.started_at DESC
+      `,
         [user_id]
       );
 
       return reply.status(200).send(result.rows);
     } catch (err) {
-      console.error(err);
-      return reply.status(500).send({ message: 'Erro ao buscar histórico.' });
+      console.error('Erro ao buscar histórico:', err);
+      return reply.status(500).send({ message: 'Erro ao buscar histórico de treinos.' });
     }
   });
 
-  app.get('/analytics/exercise/:id', async (request, reply) => {
+  app.get('/analytics/exercise/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
+
     const { id } = request.params as { id: string };
+    const user_id = request.user?.id || (request.user as any)?.sub;
+
+    if (!user_id) {
+      return reply.status(401).send({ message: 'Usuário não autenticado.' });
+    }
 
     if (!z.string().uuid().safeParse(id).success) {
       return reply.status(400).send({ message: 'ID de exercício inválido.' });
@@ -1224,26 +1249,24 @@ async function main() {
     try {
       const result = await pool.query(
         `
-        SELECT 
-          TO_CHAR(wl.started_at, 'DD/MM') AS date,
-          MAX(sl.weight) AS max_weight
-        FROM set_logs sl
-        JOIN workout_logs wl ON wl.id = sl.workout_log_id
-        WHERE sl.exercise_id = $1
-        GROUP BY wl.started_at
-        ORDER BY wl.started_at ASC
-        `,
-        [id]
+      SELECT 
+        TO_CHAR(COALESCE(wl.started_at, wl.created_at), 'DD/MM') AS date,
+        MAX(sl.weight)::float AS max_weight
+      FROM set_logs sl
+      JOIN workout_logs wl ON wl.id = sl.workout_log_id
+      WHERE sl.exercise_id = $1 AND wl.user_id = $2
+      GROUP BY DATE(COALESCE(wl.started_at, wl.created_at)), TO_CHAR(COALESCE(wl.started_at, wl.created_at), 'DD/MM')
+      ORDER BY DATE(COALESCE(wl.started_at, wl.created_at)) ASC
+      `,
+        [id, user_id]
       );
 
       return reply.status(200).send(result.rows);
     } catch (err) {
-      console.error(err);
+      console.error('Erro ao buscar analytics do exercício:', err);
       return reply.status(500).send([]);
     }
   });
-
-
 
   // Inicialização do Servidor
   const PORT = Number(process.env.PORT) || 3000;
