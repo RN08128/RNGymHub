@@ -1184,40 +1184,72 @@ async function main() {
 
   // 3. BUSCAR DETALHES DAS SÉRIES DE UMA SESSÃO ESPECÍFICA (PARA O CARD EXPANSÍVEL DO HISTORY)
   app.get('/history/session/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const user_id = request.user?.id || (request.user as any)?.sub;
+  const { id } = request.params as { id: string };
+  const user_id = request.user?.id || (request.user as any)?.sub;
 
-    if (!user_id) {
-      return reply.status(401).send({ message: 'Usuário não autenticado.' });
+  if (!user_id) {
+    return reply.status(401).send({ message: 'Usuário não autenticado.' });
+  }
+
+  // Valida se o ID está presente e se não é a string 'undefined'
+  if (!id || id === 'undefined' || id === 'null') {
+    return reply.status(400).send({ message: 'ID da sessão inválido.' });
+  }
+
+  try {
+    const sessionRes = await pool.query(
+      `
+      SELECT 
+        wl.id AS session_id,
+        COALESCE(w.name, 'Treino Avulso') AS workout_name,
+        wl.started_at,
+        wl.ended_at,
+        ROUND(EXTRACT(EPOCH FROM (wl.ended_at - wl.started_at)) / 60) AS duration_minutes,
+        COALESCE(SUM(sl.weight * sl.reps), 0)::float AS total_volume,
+        COUNT(sl.id)::int AS total_sets,
+        COALESCE(SUM(CASE WHEN sl.is_pr_weight OR sl.is_pr_volume THEN 1 ELSE 0 END), 0)::int AS pr_count
+      FROM workout_logs wl
+      LEFT JOIN workouts w ON w.id = wl.workout_id
+      LEFT JOIN set_logs sl ON sl.workout_log_id = wl.id
+      WHERE wl.id = $1 AND wl.user_id = $2
+      GROUP BY wl.id, w.name, wl.started_at, wl.ended_at
+      `,
+      [id, user_id]
+    );
+
+    if (sessionRes.rows.length === 0) {
+      return reply.status(404).send({ message: 'Sessão não encontrada.' });
     }
 
-    try {
-      const result = await pool.query(
-        `
-        SELECT 
-          sl.id,
-          sl.exercise_id,
-          COALESCE(e.name, 'Exercício') AS exercise_name,
-          sl.set_number,
-          sl.weight,
-          sl.reps,
-          sl.is_pr_weight,
-          sl.is_pr_volume
-        FROM set_logs sl
-        JOIN workout_logs wl ON wl.id = sl.workout_log_id
-        LEFT JOIN exercises e ON e.id = sl.exercise_id
-        WHERE wl.id = $1 AND wl.user_id = $2
-        ORDER BY sl.exercise_id, sl.set_number ASC
-        `,
-        [id, user_id]
-      );
+    const setsRes = await pool.query(
+      `
+      SELECT 
+        sl.id,
+        sl.exercise_id,
+        COALESCE(e.name, 'Exercício') AS exercise_name,
+        sl.set_number,
+        sl.weight,
+        sl.reps,
+        sl.is_pr_weight,
+        sl.is_pr_volume
+      FROM set_logs sl
+      JOIN workout_logs wl ON wl.id = sl.workout_log_id
+      LEFT JOIN exercises e ON e.id = sl.exercise_id
+      WHERE wl.id = $1 AND wl.user_id = $2
+      ORDER BY sl.exercise_id, sl.set_number ASC
+      `,
+      [id, user_id]
+    );
 
-      return reply.status(200).send(result.rows);
-    } catch (err) {
-      console.error('Erro ao buscar detalhes da sessão:', err);
-      return reply.status(500).send({ message: 'Erro ao carregar detalhes da sessão.' });
-    }
-  });
+    return reply.status(200).send({
+      session: sessionRes.rows[0],
+      sets: setsRes.rows
+    });
+  } catch (err) {
+    console.error('Erro ao buscar detalhes completos da sessão:', err);
+    return reply.status(500).send({ message: 'Erro ao carregar detalhes da sessão.' });
+  }
+});
 
   // 4. CONSULTA DE RECORDES HISTÓRICOS (UTILIZADO NO ACTIVE-WORKOUT PARA DETECTAR PRS)
   app.get('/workouts/history/prs', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
