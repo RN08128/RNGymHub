@@ -1,4 +1,4 @@
-var API_URL = 'http://localhost:3000';
+var API_URL = 'https://proportion-defendant-coalition-innovative.trycloudflare.com';
 const urlParams = new URLSearchParams(window.location.search);
 const workoutId = urlParams.get('id');
 
