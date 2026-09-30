@@ -1,290 +1,409 @@
 var API_URL = 'http://localhost:3000';
-
-let workoutData = null;
-let startTime = new Date().toISOString();
-
-// Captura o token de autenticação salvo
-function getAuthToken() {
-  return localStorage.getItem('@RNGymHub:token') || localStorage.getItem('token') || '';
-}
-
-// Captura o ID da URL se existir
 const urlParams = new URLSearchParams(window.location.search);
 const workoutId = urlParams.get('id');
 
-// 1. Carregar Treino Ativo com Token Autenticado
-async function loadWorkout(id) {
-  if (!id) {
-    alert('Nenhum treino selecionado! Redirecionando...');
+const STORAGE_KEY = `active_workout_state_${workoutId}`;
+
+let workoutData = null;
+let startTimeISO = null;
+let totalWorkoutSeconds = 0;
+let totalTimerInterval = null;
+let restTimerInterval = null;
+let restTimeRemaining = 120;
+
+// Mapa para armazenar os recordes históricos do usuário por exercício:
+// { [exercise_id]: { maxWeight: number, maxVolume: number } }
+let exercisePRs = {};
+
+function getAuthHeaders() {
+  let token = localStorage.getItem('@RNGymHub:token');
+  if (token) {
+    try {
+      const parsed = JSON.parse(token);
+      token = Array.isArray(parsed) ? parsed.join('.') : parsed;
+    } catch (e) {}
+  }
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': token ? `Bearer ${token.replace(/"/g, '')}` : ''
+  };
+}
+
+// -------------------------------------------------------------
+// 1. CARREGAMENTO, BUSCA DE PRS ANTERIORES E RESTAURAÇÃO
+// -------------------------------------------------------------
+async function initActiveWorkout() {
+  if (!workoutId) {
+    alert('Nenhum treino selecionado.');
     window.location.href = 'workouts.html';
     return;
   }
 
   try {
-    const token = getAuthToken();
-
-    const response = await fetch(`${API_URL}/workouts/${id}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
+    const res = await fetch(`${API_URL}/workouts/${workoutId}`, {
+      headers: getAuthHeaders()
     });
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.message || 'Erro na resposta da API');
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.message || `Erro HTTP ${res.status}`);
+    }
+    
+    const fetchedWorkout = await res.json();
+
+    // Busca histórico de PRs de todos os exercícios da ficha
+    await fetchPRHistory(fetchedWorkout.exercises || fetchedWorkout.workout_exercises || []);
+
+    const savedState = localStorage.getItem(STORAGE_KEY);
+    
+    if (savedState) {
+      const parsed = JSON.parse(savedState);
+      workoutData = parsed.workoutData;
+      startTimeISO = parsed.startTimeISO || new Date().toISOString();
+      totalWorkoutSeconds = parsed.totalWorkoutSeconds || 0;
+    } else {
+      startTimeISO = new Date().toISOString();
+      
+      const exercisesList = fetchedWorkout.exercises || fetchedWorkout.workout_exercises || [];
+
+      workoutData = {
+        ...fetchedWorkout,
+        exercises: exercisesList.map(ex => {
+          const setsCount = Number(ex.target_sets || ex.sets) || 3;
+          const repsCount = Number(ex.target_reps || ex.reps) || 10;
+          const exerciseId = ex.exercise_id || ex.id;
+          const exerciseName = ex.name || ex.exercise_name || 'Exercício';
+          
+          return {
+            ...ex,
+            exercise_id: exerciseId,
+            name: exerciseName,
+            sets_data: Array.from({ length: setsCount }, (_, i) => ({
+              set_number: i + 1,
+              weight: Number(ex.weight) || 0,
+              reps: repsCount,
+              completed: false,
+              is_pr_weight: false,
+              is_pr_volume: false
+            }))
+          };
+        })
+      };
+      
+      saveProgressToStorage();
     }
 
-    const rawData = await response.json();
-
-    // Normalização das chaves e estado interno do treino
-    workoutData = {
-      workout_id: rawData.workout_id || rawData.id,
-      name: rawData.workout_name || rawData.name || 'Treino Ativo',
-      description: rawData.description || '',
-      exercises: normalizeExercisesData(rawData.exercises || [])
-    };
-
-    // Atualiza o título na tela
-    const titleEl = document.getElementById('workout-title');
-    if (titleEl) {
-      titleEl.innerText = workoutData.name;
-    }
-
-    renderExercises();
+    checkAllPRs();
+    renderWorkoutUI();
+    startTotalWorkoutTimer();
   } catch (err) {
-    console.error('Erro ao carregar treino:', err);
-    alert(`Erro ao carregar treino: ${err.message}`);
+    console.error('Erro ao inicializar treino:', err);
+    alert(`Erro ao carregar o treino ativo: ${err.message}`);
   }
 }
 
-// Auxiliar: Normaliza o array de exercícios e transforma o contador de séries em um array mutável de séries
-function normalizeExercisesData(exercises) {
-  return exercises.map((ex) => {
-    const exerciseId = ex.exercise_id || ex.id;
-    const totalSets = typeof ex.sets === 'number' ? ex.sets : parseInt(ex.sets, 10) || 3;
-    const defaultReps = typeof ex.reps === 'number' ? ex.reps : parseInt(ex.reps, 10) || 10;
-    const defaultWeight = typeof ex.weight === 'number' ? ex.weight : parseFloat(ex.weight) || 0;
+// Chamada para buscar os recordes anteriores do usuário
+async function fetchPRHistory() {
+  try {
+    const res = await fetch(`${API_URL}/workouts/history/prs`, {
+      headers: getAuthHeaders()
+    });
 
-    // Se já vier um array de séries do backend, reutiliza. Senão, gera com base no número total de séries.
-    let setsArray = Array.isArray(ex.sets) ? ex.sets : [];
-
-    if (setsArray.length === 0) {
-      for (let i = 1; i <= totalSets; i++) {
-        setsArray.push({
-          set_number: i,
-          target_reps: defaultReps,
-          weight: defaultWeight,
-          reps: defaultReps,
-          completed: false,
-          is_pr_weight: false,
-          is_pr_volume: false
-        });
-      }
+    if (res.ok) {
+      const prs = await res.json();
+      prs.forEach(pr => {
+        exercisePRs[pr.exercise_id] = {
+          maxWeight: Number(pr.max_weight) || 0,
+          maxVolume: Number(pr.max_volume) || 0
+        };
+      });
     }
-
-    return {
-      exercise_id: exerciseId,
-      name: ex.name || 'Exercício',
-      target_muscle: ex.target_muscle || '',
-      description: ex.description || '',
-      personal_record: ex.personal_record || { max_weight: 0, max_volume_set: 0 },
-      sets: setsArray
-    };
-  });
+  } catch (err) {
+    console.warn('Não foi possível carregar o histórico de PRs:', err);
+  }
 }
 
-// 2. Renderizar os cards dos exercícios e suas séries em grid
-function renderExercises() {
-  const container = document.getElementById('exercises-container');
-  if (!container) return;
-  container.innerHTML = '';
-
-  if (!workoutData || !workoutData.exercises || workoutData.exercises.length === 0) {
-    container.innerHTML = '<p style="color: #aaa; text-align: center;">Nenhum exercício cadastrado nesta ficha.</p>';
-    return;
-  }
-
-  workoutData.exercises.forEach((ex) => {
-    const card = document.createElement('div');
-    card.className = 'exercise-card';
-
-    const maxW = ex.personal_record?.max_weight || 0;
-    const maxV = ex.personal_record?.max_volume_set || 0;
-
-    card.innerHTML = `
-      <div class="exercise-header">
-        <span class="exercise-title">${ex.name}</span>
-        <span class="pr-badge-info">
-          PR: ${maxW}kg | Vol: ${maxV}kg
-        </span>
-      </div>
-
-      <!-- Cabeçalho das Colunas de Série -->
-      <div class="set-header-row">
-        <span>Série</span>
-        <span>Carga (kg)</span>
-        <span>Reps</span>
-        <span>Status</span>
-      </div>
-
-      <div class="sets-list" id="sets-${ex.exercise_id}">
-        ${ex.sets.map((set, i) => `
-          <div class="set-row ${set.completed ? 'completed' : ''}" id="row-${ex.exercise_id}-${i}">
-            <span class="set-num">${set.set_number}</span>
-            <input type="number" placeholder="kg" id="weight-${ex.exercise_id}-${i}" value="${set.weight || ''}" step="0.5" class="input-weight">
-            <input type="number" placeholder="${set.target_reps || 'reps'}" id="reps-${ex.exercise_id}-${i}" value="${set.reps || ''}" class="input-reps">
-            <button type="button" class="btn-check ${set.completed ? (set.is_pr_weight || set.is_pr_volume ? 'pr-active' : 'active') : ''}" id="btn-${ex.exercise_id}-${i}" onclick="toggleCheck('${ex.exercise_id}',${i})">
-              ${set.completed ? (set.is_pr_weight || set.is_pr_volume ? '★' : '✓') : '✓'}
-            </button>
-          </div>
-        `).join('')}
-      </div>
-    `;
-    container.appendChild(card);
-  });
-}
-
-// 3. Validação Instantânea de PR ao Marcar a Série
-function toggleCheck(exerciseId, setIndex) {
-  const weightInput = document.getElementById(`weight-${exerciseId}-${setIndex}`);
-  const repsInput = document.getElementById(`reps-${exerciseId}-${setIndex}`);
-  const row = document.getElementById(`row-${exerciseId}-${setIndex}`);
-  const btn = document.getElementById(`btn-${exerciseId}-${setIndex}`);
-
-  if (!weightInput || !repsInput) return;
-
-  const weight = parseFloat(weightInput.value);
-  const reps = parseInt(repsInput.value, 10);
-
-  if (isNaN(weight) || isNaN(reps) || weight < 0 || reps <= 0) {
-    alert('Preencha peso e repetições válidos!');
-    return;
-  }
-
-  const exercise = workoutData.exercises.find(e => e.exercise_id === exerciseId);
-  if (!exercise || !exercise.sets[setIndex]) return;
-
-  const set = exercise.sets[setIndex];
-  const isCurrentlyCompleted = set.completed;
-
-  // Permite desmarcar a série se clicar novamente
-  if (isCurrentlyCompleted) {
-    set.completed = false;
-    set.is_pr_weight = false;
-    set.is_pr_volume = false;
-
-    row.className = 'set-row';
-    btn.className = 'btn-check';
-    btn.innerHTML = '✓';
-    return;
-  }
-
-  const pr = exercise.personal_record || { max_weight: 0, max_volume_set: 0 };
-  const setVolume = weight * reps;
-
-  const isPrWeight = pr.max_weight > 0 ? weight > pr.max_weight : weight > 0;
-  const isPrVolume = pr.max_volume_set > 0 ? setVolume > pr.max_volume_set : setVolume > 0;
-  const isPr = isPrWeight || isPrVolume;
-
-  // Atualiza estado local da série
-  set.weight = weight;
-  set.reps = reps;
-  set.completed = true;
-  set.is_pr_weight = isPrWeight;
-  set.is_pr_volume = isPrVolume;
-
-  // Atualiza a interface
-  row.className = `set-row completed ${isPr ? 'is-pr' : ''}`;
-  btn.className = `btn-check ${isPr ? 'pr-active' : 'active'}`;
-  btn.innerHTML = isPr ? '★' : '✓';
-}
-
-// 4. Finalizar e Salvar Treino na API
-async function finishWorkout() {
-  const logs = [];
-  let totalVolume = 0;
-  let totalPRs = 0;
-
+// Calcula em tempo real se alguma série bateu PR de Carga ou de Volume
+function checkAllPRs() {
   if (!workoutData || !workoutData.exercises) return;
 
   workoutData.exercises.forEach(ex => {
-    ex.sets.forEach(set => {
-      if (set.completed) {
-        logs.push({
-          exercise_id: ex.exercise_id,
-          set_number: set.set_number,
-          weight: set.weight,
-          reps: set.reps,
-          is_pr_weight: set.is_pr_weight,
-          is_pr_volume: set.is_pr_volume
-        });
+    const exId = ex.exercise_id;
+    const previousPR = exercisePRs[exId] || { maxWeight: 0, maxVolume: 0 };
 
-        totalVolume += (set.weight * set.reps);
-        if (set.is_pr_weight || set.is_pr_volume) totalPRs++;
+    let currentHighestWeight = previousPR.maxWeight;
+    let currentHighestVolume = previousPR.maxVolume;
+
+    ex.sets_data.forEach(set => {
+      const weight = Number(set.weight) || 0;
+      const reps = Number(set.reps) || 0;
+      const volume = weight * reps;
+
+      // PR de Carga (se superou a maior carga registrada anteriormente)
+      if (weight > 0 && weight > currentHighestWeight) {
+        set.is_pr_weight = true;
+        currentHighestWeight = weight; // Atualiza dinamicamente para as próximas séries do mesmo treino
+      } else {
+        set.is_pr_weight = false;
+      }
+
+      // PR de Volume (Peso x Repetições)
+      if (volume > 0 && volume > currentHighestVolume) {
+        set.is_pr_volume = true;
+        currentHighestVolume = volume;
+      } else {
+        set.is_pr_volume = false;
+      }
+    });
+  });
+}
+
+// -------------------------------------------------------------
+// 2. RENDERIZAÇÃO DA INTERFACE DO TREINO
+// -------------------------------------------------------------
+function renderWorkoutUI() {
+  const container = document.getElementById('exercises-container');
+  const titleEl = document.getElementById('workout-title');
+
+  if (titleEl && workoutData.name) {
+    titleEl.textContent = workoutData.name;
+  }
+
+  if (!container) return;
+
+  if (!workoutData.exercises || workoutData.exercises.length === 0) {
+    container.innerHTML = '<p class="empty-msg" style="color: #a1a1aa; text-align: center; margin: 40px 0;">Nenhum exercício encontrado nesta ficha.</p>';
+    return;
+  }
+
+  container.innerHTML = workoutData.exercises.map((ex, exIdx) => {
+    const previousPR = exercisePRs[ex.exercise_id];
+    const prText = previousPR && previousPR.maxWeight > 0 
+      ? `<span style="color: #eab308; font-size: 12px; margin-left: 8px;">👑 Recorde Atual: ${previousPR.maxWeight}kg</span>` 
+      : '';
+
+    return `
+      <div class="active-exercise-card" style="background: #18181b; border: 1px solid #27272a; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+        <h3 style="color: #fff; margin-bottom: 12px; font-size: 16px; display: flex; align-items: center; justify-content: space-between;">
+          <span>${ex.name}</span>
+          ${prText}
+        </h3>
+
+        <div class="sets-header" style="display: grid; grid-template-columns: 50px 1fr 1fr 60px 80px; gap: 8px; color: #a1a1aa; font-size: 12px; font-weight: bold; margin-bottom: 8px; text-align: center;">
+          <span>SÉRIE</span>
+          <span>CARGA (KG)</span>
+          <span>REPS</span>
+          <span>FEITO</span>
+          <span>STATUS</span>
+        </div>
+
+        ${ex.sets_data.map((set, setIdx) => {
+          const isPR = set.is_pr_weight || set.is_pr_volume;
+          const prBadge = set.is_pr_weight 
+            ? '<span style="background: #eab308; color: #000; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px;" title="Novo Recorde de Carga!">🏆 PR</span>'
+            : (set.is_pr_volume ? '<span style="background: #3b82f6; color: #fff; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px;" title="Novo Recorde de Volume!">⚡ PR Vol</span>' : '');
+
+          return `
+            <div class="set-row" style="display: grid; grid-template-columns: 50px 1fr 1fr 60px 80px; gap: 8px; align-items: center; margin-bottom: 8px; text-align: center;">
+              <span style="color: #38bdf8; font-weight: bold;">#${set.set_number}</span>
+              
+              <input type="number" step="0.5" min="0" value="${set.weight}" 
+                onchange="updateSetInput(${exIdx},${setIdx}, 'weight', this.value)"
+                style="background: #09090b; border: 1px solid ${set.is_pr_weight ? '#eab308' : '#3f3f46'}; color: #fff; border-radius: 4px; padding: 6px; text-align: center;" />
+
+              <input type="number" min="1" value="${set.reps}" 
+                onchange="updateSetInput(${exIdx},${setIdx}, 'reps', this.value)"
+                style="background: #09090b; border: 1px solid #3f3f46; color: #fff; border-radius: 4px; padding: 6px; text-align: center;" />
+
+              <input type="checkbox" ${set.completed ? 'checked' : ''} 
+                onchange="toggleSetCompleted(${exIdx},${setIdx}, this.checked)"
+                style="width: 20px; height: 20px; accent-color: #22c55e; cursor: pointer; justify-self: center;" />
+
+              <div>${prBadge}</div>
+            </div>
+          `;
+        }).join('')}
+
+        <button type="button" onclick="addSetToExercise(${exIdx})" 
+          style="background: transparent; border: 1px dashed #3f3f46; color: #a1a1aa; padding: 6px 12px; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 8px; font-size: 12px;">
+          + Adicionar Série
+        </button>
+      </div>
+    `;
+  }).join('');
+}
+
+// -------------------------------------------------------------
+// 3. CRONÔMETRO E STORAGE
+// -------------------------------------------------------------
+function startTotalWorkoutTimer() {
+  const timerDisplay = document.getElementById('total-workout-timer');
+
+  totalTimerInterval = setInterval(() => {
+    totalWorkoutSeconds++;
+    saveProgressToStorage();
+
+    if (timerDisplay) {
+      const hrs = String(Math.floor(totalWorkoutSeconds / 3600)).padStart(2, '0');
+      const mins = String(Math.floor((totalWorkoutSeconds % 3600) / 60)).padStart(2, '0');
+      const secs = String(totalWorkoutSeconds % 60).padStart(2, '0');
+      timerDisplay.textContent = hrs > 0 ? `${hrs}:${mins}:${secs}` : `${mins}:${secs}`;
+    }
+  }, 1000);
+}
+
+function saveProgressToStorage() {
+  if (!workoutData) return;
+
+  const stateToSave = {
+    workoutId,
+    startTimeISO,
+    totalWorkoutSeconds,
+    workoutData
+  };
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
+}
+
+// -------------------------------------------------------------
+// 4. AÇÕES DE ENTRADA DO USUÁRIO
+// -------------------------------------------------------------
+function toggleSetCompleted(exerciseIndex, setIndex, completed) {
+  workoutData.exercises[exerciseIndex].sets_data[setIndex].completed = completed;
+  checkAllPRs();
+  saveProgressToStorage();
+  renderWorkoutUI();
+
+  if (completed) {
+    const set = workoutData.exercises[exerciseIndex].sets_data[setIndex];
+    if (set.is_pr_weight) {
+      alert(`🎉 NOVO RECORDE PESSOAL! Carga de ${set.weight}kg superou o recorde anterior!`);
+    }
+    startRestTimer();
+  }
+}
+
+function updateSetInput(exerciseIndex, setIndex, field, value) {
+  const val = parseFloat(value) || 0;
+  workoutData.exercises[exerciseIndex].sets_data[setIndex][field] = val;
+  checkAllPRs();
+  saveProgressToStorage();
+  renderWorkoutUI();
+}
+
+function addSetToExercise(exerciseIndex) {
+  const currentSets = workoutData.exercises[exerciseIndex].sets_data;
+  const lastSet = currentSets[currentSets.length - 1] || { weight: 0, reps: 10 };
+  
+  currentSets.push({
+    set_number: currentSets.length + 1,
+    weight: lastSet.weight,
+    reps: lastSet.reps,
+    completed: false,
+    is_pr_weight: false,
+    is_pr_volume: false
+  });
+
+  checkAllPRs();
+  saveProgressToStorage();
+  renderWorkoutUI();
+}
+
+// -------------------------------------------------------------
+// 5. TIMER DE DESCANSO
+// -------------------------------------------------------------
+function startRestTimer() {
+  clearInterval(restTimerInterval);
+
+  const restInput = document.getElementById('rest-duration-input');
+  const configuredTime = restInput ? parseInt(restInput.value, 10) : 120;
+  restTimeRemaining = isNaN(configuredTime) ? 120 : configuredTime;
+
+  const restDisplay = document.getElementById('rest-timer-display');
+  const restModal = document.getElementById('rest-timer-container');
+  if (restModal) restModal.style.display = 'block';
+
+  restTimerInterval = setInterval(() => {
+    restTimeRemaining--;
+
+    if (restDisplay) {
+      const mins = String(Math.floor(restTimeRemaining / 60)).padStart(2, '0');
+      const secs = String(restTimeRemaining % 60).padStart(2, '0');
+      restDisplay.textContent = `${mins}:${secs}`;
+    }
+
+    if (restTimeRemaining <= 0) {
+      clearInterval(restTimerInterval);
+      if (restModal) restModal.style.display = 'none';
+      alert('🔔 Tempo de descanso finalizado! Próxima série.');
+    }
+  }, 1000);
+}
+
+function stopRestTimer() {
+  clearInterval(restTimerInterval);
+  const restModal = document.getElementById('rest-timer-container');
+  if (restModal) restModal.style.display = 'none';
+}
+
+// -------------------------------------------------------------
+// 6. FINALIZAR TREINO E SALVAR LOG COM PRs VERDADEIROS
+// -------------------------------------------------------------
+async function finishWorkout() {
+  const confirmFinish = confirm('Deseja realmente finalizar o treino?');
+  if (!confirmFinish) return;
+
+  const logsPayload = [];
+
+  workoutData.exercises.forEach(ex => {
+    ex.sets_data.forEach(set => {
+      if (set.completed || set.reps > 0) {
+        logsPayload.push({
+          exercise_id: ex.exercise_id || ex.id,
+          set_number: set.set_number,
+          weight: Number(set.weight) || 0,
+          reps: Number(set.reps) || 0,
+          is_pr_weight: Boolean(set.is_pr_weight),
+          is_pr_volume: Boolean(set.is_pr_volume)
+        });
       }
     });
   });
 
-  if (logs.length === 0) {
-    alert('Complete ao menos uma série antes de finalizar o treino.');
+  if (logsPayload.length === 0) {
+    alert('Conclua pelo menos uma série para salvar o treino.');
     return;
   }
 
   const payload = {
-    workout_id: workoutData.workout_id,
-    start_time: startTime,
-    end_time: new Date().toISOString(),
-    logs: logs
+    workout_id: workoutId,
+    started_at: startTimeISO,
+    ended_at: new Date().toISOString(),
+    logs: logsPayload
   };
 
   try {
-    const token = getAuthToken();
-
     const res = await fetch(`${API_URL}/workouts/log`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify(payload)
     });
 
+    const data = await res.json().catch(() => ({}));
+
     if (res.ok) {
-      document.getElementById('workout-title').innerText = '🏆 Treino Concluído!';
-
-      const subtitleEl = document.getElementById('workout-subtitle');
-      if (subtitleEl) {
-        subtitleEl.innerHTML = `
-          <div class="summary-box">
-            <span style="color: #eab308; font-weight: bold;">★ ${totalPRs} Recorde(s) (PRs)</span> | 
-            <span style="color: #22c55e; font-weight: bold;">📦 ${totalVolume}kg Volume Total</span>
-          </div>
-        `;
-      }
-
-      const container = document.getElementById('exercises-container');
-      if (container) container.style.display = 'none';
-
-      const finishBtn = document.querySelector('.btn-finish');
-      if (finishBtn) {
-        finishBtn.innerText = 'Ver Histórico e Evolução';
-        finishBtn.style.background = '#22c55e';
-        finishBtn.onclick = () => window.location.href = 'history.html';
-      }
-
+      alert('🎉 Treino finalizado e salvo com sucesso!');
+      clearInterval(totalTimerInterval);
+      clearInterval(restTimerInterval);
+      localStorage.removeItem(STORAGE_KEY);
+      window.location.href = 'workouts.html';
     } else {
-      const errData = await res.json().catch(() => ({}));
-      alert(`Erro ao salvar treino: ${errData.message || 'Erro interno do servidor'}`);
+      alert(data.message || 'Erro ao salvar o log do treino.');
     }
   } catch (err) {
-    console.error('Erro ao conectar com a API:', err);
-    alert('Erro de conexão ao salvar treino.');
+    console.error('Erro de requisição:', err);
+    alert('Erro de conexão com o servidor ao salvar o log.');
   }
 }
 
-// Inicializa a busca do treino ativo ao carregar o DOM
-document.addEventListener('DOMContentLoaded', () => {
-  loadWorkout(workoutId);
-});
+document.addEventListener('DOMContentLoaded', initActiveWorkout);

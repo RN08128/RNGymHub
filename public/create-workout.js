@@ -75,8 +75,8 @@ async function loadWorkoutForEdit() {
       selectedExercises = workout.exercises.map(ex => ({
         exercise_id: ex.exercise_id || ex.id,
         name: ex.name,
-        target_sets: ex.target_sets || ex.sets || 3,
-        target_reps: ex.target_reps || ex.reps || 10
+        target_sets: Number(ex.target_sets || ex.sets) || 3,
+        target_reps: Number(ex.target_reps || ex.reps) || 10
       }));
       renderSelected();
     }
@@ -147,27 +147,91 @@ function addExerciseToState() {
   renderSelected();
 }
 
-// 5. Renderizar exercícios adicionados
+// 5. Renderizar exercícios adicionados com edição inline e suporte a Drag & Drop (☰) 
 function renderSelected() {
   const list = document.getElementById('added-list');
+  if (!list) return;
+
   if (selectedExercises.length === 0) {
     list.innerHTML = '<p class="empty-msg">Nenhum exercício adicionado ainda.</p>';
     return;
   }
 
-  list.innerHTML = selectedExercises.map((item, index) => `
-    <div class="added-exercise">
-      <span class="added-exercise-info">
-        <strong>${item.name}</strong> 
-        <small>${item.target_sets} séries × ${item.target_reps} reps</small>
-      </span>
-      <button type="button" class="btn-remove-item" onclick="removeExercise(${index})" title="Remover">✕</button>
-    </div>
-  `).join('');
+  list.innerHTML = selectedExercises.map((item, index) => {
+    const sets = item.target_sets || item.sets || 3;
+    const reps = item.target_reps || item.reps || 10;
+
+    return `
+      <div class="added-exercise" 
+        draggable="true" 
+        ondragstart="handleDragStart(event, ${index})" 
+        ondragover="handleDragOver(event, ${index})" 
+        ondragend="handleDragEnd(event)"
+        style="display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: grab;">
+        
+        <!-- Ícone das 3 barrinhas na lateral esquerda/direita -->
+        <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
+          <span title="Clique e arraste para reordenar" style="color: #71717a; font-size: 18px; user-select: none;">☰</span>
+          <strong style="color: #fff; font-size: 15px;">${item.name}</strong>
+        </div>
+
+        <!-- Inputs Inline para Séries e Reps -->
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <label style="color: #a1a1aa; font-size: 12px; display: flex; align-items: center; gap: 4px;">
+            Séries
+            <input type="number" min="1" value="${sets}" 
+              onchange="updateExerciseInline(${index}, 'target_sets', this.value)"
+              style="width: 50px; background: #09090b; border: 1px solid #3f3f46; color: #38bdf8; border-radius: 4px; padding: 3px 5px; text-align: center; font-weight: bold;"
+            />
+          </label>
+
+          <span style="color: #71717a;">×</span>
+
+          <label style="color: #a1a1aa; font-size: 12px; display: flex; align-items: center; gap: 4px;">
+            Reps
+            <input type="number" min="1" value="${reps}" 
+              onchange="updateExerciseInline(${index}, 'target_reps', this.value)"
+              style="width: 50px; background: #09090b; border: 1px solid #3f3f46; color: #38bdf8; border-radius: 4px; padding: 3px 5px; text-align: center; font-weight: bold;"
+            />
+          </label>
+        </div>
+
+        <!-- Botão de Remover (Mantido do original) -->
+        <button type="button" class="btn-remove-item" onclick="removeExercise(${index})" title="Remover">✕</button>
+      </div>
+    `;
+  }).join('');
 }
 
 function removeExercise(index) {
   selectedExercises.splice(index, 1);
+  renderSelected();
+}
+
+// Atualiza o valor de Séries ou Reps diretamente do input no card
+function updateExerciseInline(index, field, value) {
+  const parsedValue = parseInt(value, 10);
+  if (isNaN(parsedValue) || parsedValue <= 0) return;
+
+  if (field === 'sets') {
+    selectedExercises[index].target_sets = parsedValue;
+    selectedExercises[index].sets = parsedValue;
+  } else if (field === 'reps') {
+    selectedExercises[index].target_reps = parsedValue;
+    selectedExercises[index].reps = parsedValue;
+  }
+}
+
+// Altera a ordem do exercício na lista (direção: -1 para cima, 1 para baixo)
+function moveExercise(index, direction) {
+  const newIndex = index + direction;
+  if (newIndex < 0 || newIndex >= selectedExercises.length) return;
+
+  // Troca a posição dos dois elementos no array
+  const temp = selectedExercises[index];
+  selectedExercises[index] = selectedExercises[newIndex];
+  selectedExercises[newIndex] = temp;
+
   renderSelected();
 }
 
@@ -218,13 +282,14 @@ async function saveWorkout(startImmediately = false) {
     return;
   }
 
+  // ✅ CORRIGIDO: Agora envia "sets" e "reps" com conversão para número!
   const payload = {
     name,
     description,
     exercises: selectedExercises.map(item => ({
       exercise_id: item.exercise_id,
-      target_sets: item.target_sets,
-      target_reps: item.target_reps
+      sets: Number(item.target_sets || item.sets) || 1,
+      reps: Number(item.target_reps || item.reps) || 10
     }))
   };
 
@@ -283,3 +348,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadWorkoutForEdit();
   }
 });
+
+// Armazena o índice do item sendo arrastado
+let draggedIndex = null;
+
+function handleDragStart(event, index) {
+  draggedIndex = index;
+  event.dataTransfer.effectAllowed = 'move';
+  event.currentTarget.style.opacity = '0.4';
+}
+
+function handleDragOver(event, targetIndex) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+
+  if (draggedIndex === null || draggedIndex === targetIndex) return;
+
+  // Reordena o array trocando as posições em tempo real
+  const itemToMove = selectedExercises.splice(draggedIndex, 1)[0];
+  selectedExercises.splice(targetIndex, 0, itemToMove);
+
+  draggedIndex = targetIndex;
+  renderSelected();
+}
+
+function handleDragEnd(event) {
+  draggedIndex = null;
+  event.currentTarget.style.opacity = '1';
+}
+
+// Atualiza Séries ou Reps diretamente no array selectedExercises sem apagar o item
+function updateExerciseInline(index, field, value) {
+  const parsedValue = parseInt(value, 10);
+  if (isNaN(parsedValue) || parsedValue <= 0) return;
+
+  selectedExercises[index][field] = parsedValue;
+  if (field === 'target_sets') selectedExercises[index].sets = parsedValue;
+  if (field === 'target_reps') selectedExercises[index].reps = parsedValue;
+}

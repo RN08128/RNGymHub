@@ -173,5 +173,76 @@ async function fetchHistoryLogs() {
   }
 }
 
+// Função disparada ao clicar em um card de treino no histórico
+async function toggleSessionDetails(sessionId) {
+  const detailsContainer = document.getElementById(`details-${sessionId}`);
+  if (!detailsContainer) return;
+
+  // Se já estiver visível, esconde (toggle)
+  if (detailsContainer.style.display === 'block') {
+    detailsContainer.style.display = 'none';
+    return;
+  }
+
+  detailsContainer.style.display = 'block';
+
+  // Evita fazer requisições repetidas se já carregou os dados dessa sessão
+  if (detailsContainer.dataset.loaded === 'true') return;
+
+  detailsContainer.innerHTML = '<p style="color: #a1a1aa; font-size: 12px;">Carregando séries...</p>';
+
+  try {
+    const res = await fetch(`${API_URL}/history/session/${sessionId}`, {
+      headers: getAuthHeaders()
+    });
+
+    if (!res.ok) {
+      detailsContainer.innerHTML = '<p style="color: #ef4444; font-size: 12px;">Erro ao carregar detalhes.</p>';
+      return;
+    }
+
+    const sets = await res.json();
+    detailsContainer.dataset.loaded = 'true';
+
+    if (!sets || sets.length === 0) {
+      detailsContainer.innerHTML = '<p style="color: #a1a1aa; font-size: 12px;">Nenhuma série registrada.</p>';
+      return;
+    }
+
+    // Agrupa as séries por exercício
+    const grouped = {};
+    sets.forEach(set => {
+      const exName = set.exercise_name || 'Exercício';
+      if (!grouped[exName]) grouped[exName] = [];
+      grouped[exName].push(set);
+    });
+
+    // Renderiza o detalhamento com as tags de PR
+    detailsContainer.innerHTML = Object.entries(grouped).map(([exName, exerciseSets]) => `
+      <div style="margin-bottom: 10px;">
+        <strong style="color: #38bdf8; font-size: 13px; display: block; margin-bottom: 4px;">${exName}</strong>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+          ${exerciseSets.map(set => {
+            const isPR = set.is_pr_weight || set.is_pr_volume;
+            const bg = isPR ? 'rgba(234, 179, 8, 0.15)' : '#09090b';
+            const border = isPR ? '#eab308' : '#3f3f46';
+            const prTag = set.is_pr_weight ? ' 🏆 PR' : (set.is_pr_volume ? ' ⚡ PR Vol' : '');
+
+            return `
+              <span style="background: ${bg}; border: 1px solid${border}; color: #fff; font-size: 12px; padding: 4px 8px; border-radius: 4px;">
+                Série ${set.set_number}: <strong>${set.weight}kg</strong> x ${set.reps}${prTag}
+              </span>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `).join('');
+
+  } catch (err) {
+    console.error('Erro ao buscar detalhes da sessão:', err);
+    detailsContainer.innerHTML = '<p style="color: #ef4444; font-size: 12px;">Erro de conexão com o servidor.</p>';
+  }
+}
+
 // Inicializa no carregamento do DOM
 document.addEventListener('DOMContentLoaded', init);
