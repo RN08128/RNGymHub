@@ -10,10 +10,7 @@ let startTimeISO = null;
 let totalWorkoutSeconds = 0;
 let totalTimerInterval = null;
 let restTimerInterval = null;
-let restTimeRemaining = 120;
 
-// Mapa para armazenar os recordes históricos do usuário por exercício:
-// { [exercise_id]: { maxWeight: number, maxVolume: number } }
 let exercisePRs = {};
 
 function getAuthHeaders() {
@@ -31,7 +28,7 @@ function getAuthHeaders() {
 }
 
 // -------------------------------------------------------------
-// 1. CARREGAMENTO, BUSCA DE PRS ANTERIORES E RESTAURAÇÃO
+// 1. CARREGAMENTO E INICIALIZAÇÃO
 // -------------------------------------------------------------
 async function initActiveWorkout() {
   if (!workoutId) {
@@ -52,8 +49,7 @@ async function initActiveWorkout() {
     
     const fetchedWorkout = await res.json();
 
-    // Busca histórico de PRs de todos os exercícios da ficha
-    await fetchPRHistory(fetchedWorkout.exercises || fetchedWorkout.workout_exercises || []);
+    await fetchPRHistory();
 
     const savedState = localStorage.getItem(STORAGE_KEY);
     
@@ -103,7 +99,6 @@ async function initActiveWorkout() {
   }
 }
 
-// Chamada para buscar os recordes anteriores do usuário
 async function fetchPRHistory() {
   try {
     const res = await fetch(`${API_URL}/workouts/history/prs`, {
@@ -124,7 +119,6 @@ async function fetchPRHistory() {
   }
 }
 
-// Calcula em tempo real se alguma série bateu PR de Carga ou de Volume
 function checkAllPRs() {
   if (!workoutData || !workoutData.exercises) return;
 
@@ -140,15 +134,13 @@ function checkAllPRs() {
       const reps = Number(set.reps) || 0;
       const volume = weight * reps;
 
-      // PR de Carga (se superou a maior carga registrada anteriormente)
       if (weight > 0 && weight > currentHighestWeight) {
         set.is_pr_weight = true;
-        currentHighestWeight = weight; // Atualiza dinamicamente para as próximas séries do mesmo treino
+        currentHighestWeight = weight;
       } else {
         set.is_pr_weight = false;
       }
 
-      // PR de Volume (Peso x Repetições)
       if (volume > 0 && volume > currentHighestVolume) {
         set.is_pr_volume = true;
         currentHighestVolume = volume;
@@ -173,60 +165,56 @@ function renderWorkoutUI() {
   if (!container) return;
 
   if (!workoutData.exercises || workoutData.exercises.length === 0) {
-    container.innerHTML = '<p class="empty-msg" style="color: #a1a1aa; text-align: center; margin: 40px 0;">Nenhum exercício encontrado nesta ficha.</p>';
+    container.innerHTML = '<p style="color: #a1a1aa; text-align: center; margin: 40px 0;">Nenhum exercício encontrado nesta ficha.</p>';
     return;
   }
 
   container.innerHTML = workoutData.exercises.map((ex, exIdx) => {
     const previousPR = exercisePRs[ex.exercise_id];
     const prText = previousPR && previousPR.maxWeight > 0 
-      ? `<span style="color: #eab308; font-size: 12px; margin-left: 8px;">👑 Recorde Atual: ${previousPR.maxWeight}kg</span>` 
+      ? `<span class="pr-badge-header">👑 Recorde: ${previousPR.maxWeight}kg</span>` 
       : '';
 
     return `
-      <div class="active-exercise-card" style="background: #18181b; border: 1px solid #27272a; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-        <h3 style="color: #fff; margin-bottom: 12px; font-size: 16px; display: flex; align-items: center; justify-content: space-between;">
-          <span>${ex.name}</span>
+      <div class="exercise-card">
+        <div class="exercise-header">
+          <span class="exercise-title">${ex.name}</span>
           ${prText}
-        </h3>
+        </div>
 
-        <div class="sets-header" style="display: grid; grid-template-columns: 50px 1fr 1fr 60px 80px; gap: 8px; color: #a1a1aa; font-size: 12px; font-weight: bold; margin-bottom: 8px; text-align: center;">
+        <div class="set-header-row">
           <span>SÉRIE</span>
           <span>CARGA (KG)</span>
           <span>REPS</span>
           <span>FEITO</span>
-          <span>STATUS</span>
         </div>
 
-        ${ex.sets_data.map((set, setIdx) => {
-          const isPR = set.is_pr_weight || set.is_pr_volume;
-          const prBadge = set.is_pr_weight 
-            ? '<span style="background: #eab308; color: #000; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px;" title="Novo Recorde de Carga!">🏆 PR</span>'
-            : (set.is_pr_volume ? '<span style="background: #3b82f6; color: #fff; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px;" title="Novo Recorde de Volume!">⚡ PR Vol</span>' : '');
+        <div class="sets-list">
+          ${ex.sets_data.map((set, setIdx) => {
+            const isPR = set.is_pr_weight || set.is_pr_volume;
+            
+            return `
+              <div class="set-row ${set.completed ? 'completed' : ''} ${isPR ? 'is-pr' : ''}">
+                <div class="set-num-container">
+                  <span class="set-num">#${set.set_number}</span>${isPR ? '<span class="pr-tag-mini">👑 PR</span>' : ''}
+                </div>
+                
+                <input type="number" step="0.5" min="0" value="${set.weight}" 
+                  onchange="updateSetInput(${exIdx},${setIdx}, 'weight', this.value)" />
 
-          return `
-            <div class="set-row" style="display: grid; grid-template-columns: 50px 1fr 1fr 60px 80px; gap: 8px; align-items: center; margin-bottom: 8px; text-align: center;">
-              <span style="color: #38bdf8; font-weight: bold;">#${set.set_number}</span>
-              
-              <input type="number" step="0.5" min="0" value="${set.weight}" 
-                onchange="updateSetInput(${exIdx},${setIdx}, 'weight', this.value)"
-                style="background: #09090b; border: 1px solid ${set.is_pr_weight ? '#eab308' : '#3f3f46'}; color: #fff; border-radius: 4px; padding: 6px; text-align: center;" />
+                <input type="number" min="1" value="${set.reps}" 
+                  onchange="updateSetInput(${exIdx},${setIdx}, 'reps', this.value)" />
 
-              <input type="number" min="1" value="${set.reps}" 
-                onchange="updateSetInput(${exIdx},${setIdx}, 'reps', this.value)"
-                style="background: #09090b; border: 1px solid #3f3f46; color: #fff; border-radius: 4px; padding: 6px; text-align: center;" />
+                <button type="button" class="btn-check ${set.completed ? 'active' : ''}" 
+                  onclick="toggleSetCompleted(${exIdx},${setIdx})">
+                  ✓
+                </button>
+              </div>
+            `;
+          }).join('')}
+        </div>
 
-              <input type="checkbox" ${set.completed ? 'checked' : ''} 
-                onchange="toggleSetCompleted(${exIdx},${setIdx}, this.checked)"
-                style="width: 20px; height: 20px; accent-color: #22c55e; cursor: pointer; justify-self: center;" />
-
-              <div>${prBadge}</div>
-            </div>
-          `;
-        }).join('')}
-
-        <button type="button" onclick="addSetToExercise(${exIdx})" 
-          style="background: transparent; border: 1px dashed #3f3f46; color: #a1a1aa; padding: 6px 12px; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 8px; font-size: 12px;">
+        <button type="button" class="btn-add-set" onclick="addSetToExercise(${exIdx})">
           + Adicionar Série
         </button>
       </div>
@@ -267,15 +255,19 @@ function saveProgressToStorage() {
 }
 
 // -------------------------------------------------------------
-// 4. AÇÕES DE ENTRADA DO USUÁRIO
+// 4. AÇÕES DO USUÁRIO
 // -------------------------------------------------------------
-function toggleSetCompleted(exerciseIndex, setIndex, completed) {
-  workoutData.exercises[exerciseIndex].sets_data[setIndex].completed = completed;
+function toggleSetCompleted(exerciseIndex, setIndex) {
+  const currentStatus = workoutData.exercises[exerciseIndex].sets_data[setIndex].completed;
+  const newStatus = !currentStatus;
+  
+  workoutData.exercises[exerciseIndex].sets_data[setIndex].completed = newStatus;
+  
   checkAllPRs();
   saveProgressToStorage();
   renderWorkoutUI();
 
-  if (completed) {
+  if (newStatus) {
     const set = workoutData.exercises[exerciseIndex].sets_data[setIndex];
     if (set.is_pr_weight) {
       alert(`🎉 NOVO RECORDE PESSOAL! Carga de ${set.weight}kg superou o recorde anterior!`);
@@ -318,7 +310,7 @@ function startRestTimer() {
 
   const restInput = document.getElementById('rest-duration-input');
   const configuredTime = restInput ? parseInt(restInput.value, 10) : 120;
-  restTimeRemaining = isNaN(configuredTime) ? 120 : configuredTime;
+  let restTimeRemaining = isNaN(configuredTime) ? 120 : configuredTime;
 
   const restDisplay = document.getElementById('rest-timer-display');
   const restModal = document.getElementById('rest-timer-container');
@@ -348,7 +340,7 @@ function stopRestTimer() {
 }
 
 // -------------------------------------------------------------
-// 6. FINALIZAR TREINO E SALVAR LOG COM PRs VERDADEIROS
+// 6. FINALIZAR TREINO
 // -------------------------------------------------------------
 async function finishWorkout() {
   const confirmFinish = confirm('Deseja realmente finalizar o treino?');

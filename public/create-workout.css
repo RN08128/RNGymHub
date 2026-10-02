@@ -2,12 +2,17 @@
    ESTILOS ESPECÍFICOS: CRIAR FICHA DE TREINO
    ========================================== */
 
+/* Prevenção global de overflow horizontal */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
 /* Container Principal */
 .container {
   max-width: 700px;
-  width: 90vw;
+  width: 95vw;
   margin: 0 auto;
-  padding: 24px 0 40px 0;
+  padding: 16px 0 40px 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -18,7 +23,7 @@
   background-color: #1e1e1e;
   border: 1px solid #2d2d2d;
   border-radius: 12px;
-  padding: 20px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -36,24 +41,23 @@
   font-weight: 600;
 }
 
-/* Inputs e Selects */
+/* Inputs e Selects genéricos com alvo de toque melhorado */
 input[type="text"],
-input[type="number"],
 select {
   width: 100%;
-  padding: 10px 12px;
+  min-height: 46px;
+  padding: 10px 14px;
   background-color: #121212;
   border: 1px solid #333333;
   border-radius: 8px;
   color: #ffffff;
-  font-size: 0.95rem;
+  font-size: 1rem;
   outline: none;
   box-sizing: border-box;
   transition: border-color 0.2s;
 }
 
 input[type="text"]:focus,
-input[type="number"]:focus,
 select:focus {
   border-color: #007bff;
 }
@@ -63,10 +67,10 @@ select:focus {
   background-color: #1e1e1e;
   border: 1px solid #2d2d2d;
   border-radius: 12px;
-  padding: 20px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .section-header h3 {
@@ -78,7 +82,7 @@ select:focus {
 .added-list-container {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   min-height: 40px;
 }
 
@@ -92,12 +96,13 @@ select:focus {
 /* Item de Exercício Adicionado */
 .added-exercise {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 10px;
   background-color: #121212;
   border: 1px solid #2a2a2a;
-  padding: 10px 14px;
-  border-radius: 8px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  width: 100%;
 }
 
 .added-exercise-info {
@@ -107,30 +112,112 @@ select:focus {
   color: #ffffff;
 }
 
+.added-exercise-info span {
+  font-weight: 600;
+  font-size: 1rem;
+  word-break: break-word;
+}
+
 .added-exercise-info small {
   color: #007bff;
   font-weight: 600;
+  font-size: 0.85rem;
 }
 
-.btn-remove-item {
+/* Controles de Séries/Reps dentro de cada Exercício Adicionado */
+.added-exercise-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding-top: 8px;
+  border-top: 1px solid #222222;
+}
+
+/* ==========================================
+   INPUTS MODERNOS DE SETS E REPS (UNIFICADOS)
+   ========================================== */
+
+.input-control-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #121212;
+  border: 1px solid #333333;
+  border-radius: 8px;
+  padding: 0 10px;
+  min-height: 46px;
+  width: 100%;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input-control-group:focus-within {
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.2);
+}
+
+.input-control-group label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #007bff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 6px 0 0;
+  user-select: none;
+}
+
+/* Esconder spinners nativos do input number */
+.input-control-group input[type="number"]::-webkit-inner-spin-button,
+.input-control-group input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.input-control-group input[type="number"] {
+  -moz-appearance: textfield;
+  width: 100%;
+  height: 100%;
+  min-height: 44px;
   background: transparent;
   border: none;
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 0;
+  outline: none;
+}
+
+/* Botão de Remover Exercício */
+.btn-remove-item {
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
   color: #ef4444;
   font-size: 1.1rem;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-  transition: background 0.2s;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: background-color 0.2s, color 0.2s;
+  flex-shrink: 0;
 }
 
-.btn-remove-item:hover {
-  background-color: rgba(239, 68, 68, 0.15);
+.btn-remove-item:hover,
+.btn-remove-item:active {
+  background-color: #ef4444;
+  color: #ffffff;
 }
 
 .divider {
   border: none;
   border-top: 1px solid #2d2d2d;
-  margin: 4px 0;
+  margin: 2px 0;
 }
 
 /* Select com botão de deletar alinhados */
@@ -138,6 +225,7 @@ select:focus {
   display: flex;
   gap: 8px;
   align-items: center;
+  width: 100%;
 }
 
 .btn-delete-icon {
@@ -145,11 +233,15 @@ select:focus {
   border: 1px solid #ef4444;
   color: #ffffff;
   border-radius: 8px;
-  padding: 0 14px;
-  height: 40px;
+  padding: 0 16px;
+  min-height: 46px;
   cursor: pointer;
   font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: background 0.2s;
+  flex-shrink: 0;
 }
 
 .btn-delete-icon:hover {
@@ -164,11 +256,12 @@ select:focus {
   cursor: pointer;
   margin-top: 6px;
   text-align: left;
-  padding: 0;
+  padding: 4px 0;
   font-weight: 600;
   text-decoration: underline;
 }
 
+/* Grid de 2 Colunas */
 .grid-2-col {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -180,11 +273,14 @@ select:focus {
   background-color: #27272a;
   border: 1px solid #3f3f46;
   color: #ffffff;
+  min-height: 48px;
   padding: 12px;
   border-radius: 8px;
+  font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.2s;
+  width: 100%;
 }
 
 .btn-secondary:hover {
@@ -203,11 +299,15 @@ select:focus {
   background-color: transparent;
   border: 1px solid #007bff;
   color: #007bff;
-  padding: 14px;
+  min-height: 48px;
+  padding: 12px;
   border-radius: 10px;
   font-size: 0.95rem;
   font-weight: 700;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: background 0.2s, color 0.2s;
 }
 
@@ -220,11 +320,15 @@ select:focus {
   background-color: #22c55e;
   color: #ffffff;
   border: none;
-  padding: 14px;
+  min-height: 48px;
+  padding: 12px;
   border-radius: 10px;
   font-size: 0.95rem;
   font-weight: 700;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: background-color 0.2s;
 }
 
@@ -250,7 +354,7 @@ select:focus {
 .modal-content {
   background-color: #1e1e1e;
   border: 1px solid #2d2d2d;
-  padding: 24px;
+  padding: 20px;
   border-radius: 12px;
   width: 90%;
   max-width: 420px;
@@ -262,4 +366,14 @@ select:focus {
 .modal-content h3 {
   margin: 0 0 4px 0;
   color: #ffffff;
+}
+
+/* ==========================================
+   MEDIA QUERIES PARA MOBILE (< 580px)
+   ========================================== */
+@media (max-width: 580px) {
+  .grid-2-col,
+  .actions-group {
+    grid-template-columns: 1fr;
+  }
 }

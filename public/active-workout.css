@@ -2,80 +2,90 @@
    ESTILOS ESPECÍFICOS: TREINO ATIVO (ACTIVE WORKOUT)
    ========================================== */
 
+/* Prevenção global de overflow horizontal */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
 /* Container Principal */
 .container {
   max-width: 700px;
-  width: 90vw;
+  width: 95vw;
   margin: 0 auto;
-  padding: 24px 0 40px 0;
+  padding: 16px 0 40px 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
 h1#workout-title {
-  font-size: 1.8rem;
+  font-size: 1.75rem;
   font-weight: 700;
   margin-bottom: 4px;
   color: #ffffff;
 }
 
 .subtitle {
-  color: #a0a0a0;
-  font-size: 0.95rem;
+  color: #a1a1aa;
+  font-size: 0.9rem;
+  margin: 0;
 }
 
-/* Card do Exercício */
+/* Container de Cards dos Exercícios */
 #exercises-container {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
+/* Card do Exercício */
 .exercise-card {
   background-color: #1e1e1e;
   border: 1px solid #2d2d2d;
   border-radius: 12px;
-  padding: 16px 20px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .exercise-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 12px;
+  padding-bottom: 10px;
   border-bottom: 1px solid #2a2a2a;
-  margin-bottom: 12px;
 }
 
 .exercise-title {
   font-weight: 600;
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   color: #ffffff;
+  word-break: break-word;
 }
 
-.pr-badge-info {
-  color: #3b82f6;
+/* Recorde Atual no Cabeçalho */
+.pr-badge-header {
+  color: #eab308;
   font-size: 0.8rem;
-  background: rgba(59, 130, 246, 0.12);
-  padding: 4px 10px;
-  border-radius: 20px;
   font-weight: 600;
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
-/* Tabela de Séries */
+/* Tabela de Séries (Grid de 4 colunas) */
 .set-header-row {
   display: grid;
-  grid-template-columns: 40px 1fr 1fr 50px;
-  gap: 12px;
+  grid-template-columns: 40px 1fr 1fr 48px;
+  gap: 10px;
   align-items: center;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #71717a;
+  color: #007bff;
   font-weight: 700;
-  padding: 0 4px 8px 4px;
+  padding: 0 4px;
   text-align: center;
 }
 
@@ -87,49 +97,77 @@ h1#workout-title {
 
 .set-row {
   display: grid;
-  grid-template-columns: 40px 1fr 1fr 50px;
-  gap: 12px;
+  grid-template-columns: 40px 1fr 1fr 48px;
+  gap: 10px;
   align-items: center;
-  padding: 4px;
+  padding: 6px;
   border-radius: 8px;
-  transition: background 0.2s;
+  border: 1px solid transparent;
+  background-color: transparent;
+  transition: all 0.25s ease;
+  position: relative;
 }
 
+/* Destaque de Série Concluída */
 .set-row.completed {
-  background-color: rgba(34, 197, 94, 0.05);
+  background-color: rgba(34, 197, 94, 0.06);
 }
 
+/* Glow Minimalista quando bate PR */
 .set-row.is-pr {
-  background-color: rgba(234, 179, 8, 0.08);
+  border-color: rgba(234, 179, 8, 0.5);
+  background-color: rgba(234, 179, 8, 0.05);
+  box-shadow: 0 0 10px rgba(234, 179, 8, 0.2);
+}
+
+.set-num-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .set-num {
   text-align: center;
   font-weight: 700;
-  color: #a1a1aa;
-  font-size: 0.9rem;
+  color: #71717a;
+  font-size: 0.85rem;
+  user-select: none;
 }
 
-/* Força os Inputs dentro da tabela de séries a ficarem na horizontal */
+/* Tag PR minimalista sob o número da série */
+.pr-tag-mini {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #eab308;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+/* Inputs de Carga e Repetições na Tabela */
 .set-row input[type="number"] {
   width: 100% !important;
+  min-height: 44px !important;
+  height: 44px !important;
   margin: 0 !important;
-  padding: 10px 8px !important;
+  padding: 8px !important;
   background-color: #121212 !important;
   border: 1px solid #333333 !important;
   border-radius: 8px !important;
   color: #ffffff !important;
-  font-size: 0.95rem !important;
+  font-size: 1rem !important;
+  font-weight: 700 !important;
   text-align: center !important;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .set-row input[type="number"]:focus {
   border-color: #007bff !important;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.2);
 }
 
-/* Remove as setinhas padrões de número dos navegadores */
+/* Remove as setinhas padrões do input number */
 .set-row input[type="number"]::-webkit-outer-spin-button,
 .set-row input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -141,67 +179,80 @@ h1#workout-title {
   appearance: textfield;
 }
 
-/* Botão de Check / Marcação */
+/* Botão de Check / Marcação da Série */
 .btn-check {
   width: 100%;
-  height: 38px;
+  height: 44px;
+  min-height: 44px;
   margin: 0 !important;
   padding: 0 !important;
   background-color: #27272a;
   border: 1px solid #3f3f46;
   border-radius: 8px;
   color: #a1a1aa;
-  font-size: 1rem;
+  font-size: 1.1rem;
   font-weight: bold;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: all 0.2s ease-in-out;
 }
 
 .btn-check:hover {
   border-color: #22c55e;
   color: #22c55e;
+  background-color: rgba(34, 197, 94, 0.1);
 }
 
+/* Estado Ativo: Série Marcada como Feita (Verde Bonito Original) */
 .btn-check.active {
   background-color: #22c55e !important;
   border-color: #22c55e !important;
   color: #ffffff !important;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.3);
 }
 
-.btn-check.pr-active {
-  background-color: #eab308 !important;
-  border-color: #eab308 !important;
-  color: #18181b !important;
-  font-size: 1.1rem;
-}
-
-/* Botão Finalizar */
-.btn-finish {
+/* Botão Adicionar Série */
+.btn-add-set {
+  background: transparent;
+  border: 1px dashed #3f3f46;
+  color: #a1a1aa;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
   width: 100%;
-  padding: 14px;
+  margin-top: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-add-set:hover {
+  border-color: #007bff;
+  color: #007bff;
+  background-color: rgba(0, 123, 255, 0.05);
+}
+
+/* Botão Concluir Treino */
+.btn-finish {
   background-color: #22c55e;
   color: #ffffff;
   border: none;
+  min-height: 48px;
+  padding: 12px;
   border-radius: 10px;
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
-  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: background-color 0.2s;
+  width: 100%;
+  margin-top: 8px;
 }
 
 .btn-finish:hover {
   background-color: #16a34a;
-}
-
-/* Resumo ao concluir */
-.summary-box {
-  background: #1f1f1f;
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid #262626;
-  margin-top: 8px;
 }

@@ -75,6 +75,7 @@ async function loadWorkoutForEdit() {
       selectedExercises = workout.exercises.map(ex => ({
         exercise_id: ex.exercise_id || ex.id,
         name: ex.name,
+        target_muscle: ex.target_muscle || 'Geral',
         target_sets: Number(ex.target_sets || ex.sets) || 3,
         target_reps: Number(ex.target_reps || ex.reps) || 10
       }));
@@ -140,6 +141,7 @@ function addExerciseToState() {
   selectedExercises.push({
     exercise_id: exerciseId,
     name: exerciseObj.name,
+    target_muscle: exerciseObj.target_muscle || 'Geral',
     target_sets: sets,
     target_reps: reps
   });
@@ -147,7 +149,7 @@ function addExerciseToState() {
   renderSelected();
 }
 
-// 5. Renderizar exercícios adicionados com edição inline e suporte a Drag & Drop (☰) 
+// 5. Renderizar exercícios adicionados com o novo visual e Drag & Drop
 function renderSelected() {
   const list = document.getElementById('added-list');
   if (!list) return;
@@ -160,6 +162,7 @@ function renderSelected() {
   list.innerHTML = selectedExercises.map((item, index) => {
     const sets = item.target_sets || item.sets || 3;
     const reps = item.target_reps || item.reps || 10;
+    const muscle = item.target_muscle || 'Geral';
 
     return `
       <div class="added-exercise" 
@@ -167,37 +170,33 @@ function renderSelected() {
         ondragstart="handleDragStart(event, ${index})" 
         ondragover="handleDragOver(event, ${index})" 
         ondragend="handleDragEnd(event)"
-        style="display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: grab;">
+        style="cursor: grab;">
         
-        <!-- Ícone das 3 barrinhas na lateral esquerda/direita -->
-        <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
-          <span title="Clique e arraste para reordenar" style="color: #71717a; font-size: 18px; user-select: none;">☰</span>
-          <strong style="color: #fff; font-size: 15px;">${item.name}</strong>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span title="Clique e arraste para reordenar" style="color: #71717a; font-size: 18px; user-select: none; cursor: grab;">☰</span>
+          <div class="added-exercise-info">
+            <span>${item.name}</span>
+            <small>${muscle}</small>
+          </div>
         </div>
 
-        <!-- Inputs Inline para Séries e Reps -->
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <label style="color: #a1a1aa; font-size: 12px; display: flex; align-items: center; gap: 4px;">
-            Séries
-            <input type="number" min="1" value="${sets}" 
+        <div class="added-exercise-controls">
+          <div class="input-control-group" style="max-width: 110px;">
+            <label for="inline-sets-${index}">SETS</label>
+            <input type="number" id="inline-sets-${index}" min="1" max="99" value="${sets}" 
               onchange="updateExerciseInline(${index}, 'target_sets', this.value)"
-              style="width: 50px; background: #09090b; border: 1px solid #3f3f46; color: #38bdf8; border-radius: 4px; padding: 3px 5px; text-align: center; font-weight: bold;"
             />
-          </label>
+          </div>
 
-          <span style="color: #71717a;">×</span>
-
-          <label style="color: #a1a1aa; font-size: 12px; display: flex; align-items: center; gap: 4px;">
-            Reps
-            <input type="number" min="1" value="${reps}" 
+          <div class="input-control-group" style="max-width: 110px;">
+            <label for="inline-reps-${index}">REPS</label>
+            <input type="number" id="inline-reps-${index}" min="1" max="999" value="${reps}" 
               onchange="updateExerciseInline(${index}, 'target_reps', this.value)"
-              style="width: 50px; background: #09090b; border: 1px solid #3f3f46; color: #38bdf8; border-radius: 4px; padding: 3px 5px; text-align: center; font-weight: bold;"
             />
-          </label>
-        </div>
+          </div>
 
-        <!-- Botão de Remover (Mantido do original) -->
-        <button type="button" class="btn-remove-item" onclick="removeExercise(${index})" title="Remover">✕</button>
+          <button type="button" class="btn-remove-item" onclick="removeExercise(${index})" title="Remover exercício">✕</button>
+        </div>
       </div>
     `;
   }).join('');
@@ -208,37 +207,24 @@ function removeExercise(index) {
   renderSelected();
 }
 
-// Atualiza o valor de Séries ou Reps diretamente do input no card
+// Atualiza Séries ou Reps diretamente no array selectedExercises sem desfazer a edição ativa
 function updateExerciseInline(index, field, value) {
   const parsedValue = parseInt(value, 10);
   if (isNaN(parsedValue) || parsedValue <= 0) return;
 
-  if (field === 'sets') {
-    selectedExercises[index].target_sets = parsedValue;
+  selectedExercises[index][field] = parsedValue;
+  
+  if (field === 'target_sets') {
     selectedExercises[index].sets = parsedValue;
-  } else if (field === 'reps') {
-    selectedExercises[index].target_reps = parsedValue;
+  } else if (field === 'target_reps') {
     selectedExercises[index].reps = parsedValue;
   }
 }
 
-// Altera a ordem do exercício na lista (direção: -1 para cima, 1 para baixo)
-function moveExercise(index, direction) {
-  const newIndex = index + direction;
-  if (newIndex < 0 || newIndex >= selectedExercises.length) return;
-
-  // Troca a posição dos dois elementos no array
-  const temp = selectedExercises[index];
-  selectedExercises[index] = selectedExercises[newIndex];
-  selectedExercises[newIndex] = temp;
-
-  renderSelected();
-}
-
 // 6. Cadastrar Novo Exercício via Modal
 async function createNewExercise() {
-  const name = document.getElementById('new-ex-name').value;
-  const target_muscle = document.getElementById('new-ex-muscle').value;
+  const name = document.getElementById('new-ex-name').value.trim();
+  const target_muscle = document.getElementById('new-ex-muscle').value.trim();
 
   if (!name || !target_muscle) return alert('Preencha o nome e o grupo muscular.');
 
@@ -282,7 +268,6 @@ async function saveWorkout(startImmediately = false) {
     return;
   }
 
-  // ✅ CORRIGIDO: Agora envia "sets" e "reps" com conversão para número!
   const payload = {
     name,
     description,
@@ -293,7 +278,6 @@ async function saveWorkout(startImmediately = false) {
     }))
   };
 
-  // Se tiver ID na URL faz PUT (editar), caso contrário faz POST (criar)
   const isEditing = Boolean(editingWorkoutId);
   const endpoint = isEditing ? `${API_URL}/workouts/${editingWorkoutId}` : `${API_URL}/workouts`;
   const method = isEditing ? 'PUT' : 'POST';
@@ -309,7 +293,6 @@ async function saveWorkout(startImmediately = false) {
 
     if (res.ok) {
       if (startImmediately) {
-        // Captura a ID tanto para criação quanto para edição
         const targetId = isEditing ? editingWorkoutId : data.workout_id;
 
         if (!targetId) {
@@ -341,15 +324,7 @@ function toggleModal(show) {
   document.getElementById('ex-modal').style.display = show ? 'flex' : 'none';
 }
 
-// Inicialização: carrega exercícios e, se houver ID, carrega os dados da ficha
-document.addEventListener('DOMContentLoaded', async () => {
-  await fetchExercises();
-  if (editingWorkoutId) {
-    await loadWorkoutForEdit();
-  }
-});
-
-// Armazena o índice do item sendo arrastado
+// Gestão do Drag & Drop
 let draggedIndex = null;
 
 function handleDragStart(event, index) {
@@ -364,7 +339,6 @@ function handleDragOver(event, targetIndex) {
 
   if (draggedIndex === null || draggedIndex === targetIndex) return;
 
-  // Reordena o array trocando as posições em tempo real
   const itemToMove = selectedExercises.splice(draggedIndex, 1)[0];
   selectedExercises.splice(targetIndex, 0, itemToMove);
 
@@ -377,12 +351,10 @@ function handleDragEnd(event) {
   event.currentTarget.style.opacity = '1';
 }
 
-// Atualiza Séries ou Reps diretamente no array selectedExercises sem apagar o item
-function updateExerciseInline(index, field, value) {
-  const parsedValue = parseInt(value, 10);
-  if (isNaN(parsedValue) || parsedValue <= 0) return;
-
-  selectedExercises[index][field] = parsedValue;
-  if (field === 'target_sets') selectedExercises[index].sets = parsedValue;
-  if (field === 'target_reps') selectedExercises[index].reps = parsedValue;
-}
+// Inicialização: carrega exercícios e, se houver ID, carrega os dados da ficha
+document.addEventListener('DOMContentLoaded', async () => {
+  await fetchExercises();
+  if (editingWorkoutId) {
+    await loadWorkoutForEdit();
+  }
+});
