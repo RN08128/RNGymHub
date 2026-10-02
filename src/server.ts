@@ -1317,7 +1317,7 @@ async function main() {
   });
 
   // Inicialização do Servidor
-  const PORT = Number(process.env.PORT);
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.listen({ port: PORT, host: '0.0.0.0' }, (err, address) => {
     if (err) {
