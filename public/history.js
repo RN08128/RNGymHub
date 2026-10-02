@@ -1,4 +1,5 @@
-var API_URL = 'http://localhost:3000' || 'https://proportion-defendant-coalition-innovative.trycloudflare.com';
+var API_URL = 'http://localhost:3000'
+  || 'https://proportion-defendant-coalition-innovative.trycloudflare.com';
 
 let chartInstance = null;
 
@@ -16,7 +17,7 @@ function getAuthHeaders() {
 async function init() {
   await fetchExercisesForSelect();
   await fetchHistoryLogs();
-  
+
   const select = document.getElementById('select-exercise');
   if (select) {
     select.addEventListener('change', loadExerciseAnalytics);
@@ -34,7 +35,7 @@ async function fetchExercisesForSelect() {
 
     const exercises = await res.json();
     const select = document.getElementById('select-exercise');
-    
+
     if (!select) return;
 
     if (!exercises || exercises.length === 0) {
@@ -42,7 +43,7 @@ async function fetchExercisesForSelect() {
       return;
     }
 
-    select.innerHTML = exercises.map(ex => 
+    select.innerHTML = exercises.map(ex =>
       `<option value="${ex.id}">${ex.name}</option>`
     ).join('');
 
@@ -71,7 +72,15 @@ async function loadExerciseAnalytics() {
     }
 
     const data = await res.json();
-    const labels = data.map(d => d.date);
+
+    // Formata datas para o gráfico
+    const labels = data.map(d => {
+      const rawDate = d.date || d.started_at || d.start_time;
+      if (!rawDate) return '';
+      const dateObj = new Date(rawDate);
+      return dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    });
+
     const weights = data.map(d => parseFloat(d.max_weight) || 0);
 
     renderChart(labels, weights);
@@ -117,6 +126,7 @@ function renderChart(labels, weights) {
   });
 }
 
+/* LISTAGEM DO HISTÓRICO DE SESSÕES */
 async function fetchHistoryLogs() {
   try {
     const res = await fetch(`${API_URL}/history`, {
@@ -140,33 +150,37 @@ async function fetchHistoryLogs() {
     }
 
     container.innerHTML = sessions.map(s => {
-  // Captura o ID correto independente do nome retornado pela rota /history
-  const sessionId = s.id || s.session_id || s.workout_log_id;
-  
-  const dateFormatted = s.start_time || s.started_at
-    ? new Date(s.start_time || s.started_at).toLocaleDateString('pt-BR') 
-    : 'Data Indefinida';
+      // Pega o ID de qualquer uma das chaves enviadas pela API
+      const sessionId = s.session_id || s.id || s.workout_log_id;
+      const clickAttribute = (sessionId && sessionId !== 'undefined') ? `onclick="openSessionModal('${sessionId}')"` : '';
 
-  const prCount = parseInt(s.pr_count, 10) || 0;
+      // Mapeia data de início
+      const rawDate = s.start_time || s.started_at;
+      const dateFormatted = rawDate
+        ? new Date(rawDate).toLocaleDateString('pt-BR')
+        : 'Data Indefinida';
 
-  return `
-    <div class="history-card" onclick="openSessionModal('${sessionId}')">
-      <div>
-        <div class="history-title">${s.workout_name || 'Treino'}</div>
-        <div class="history-meta">${dateFormatted} • ${s.total_sets || 0} séries concluídas</div>
-      </div>
-      ${prCount > 0 ? `<div class="pr-count">★ ${prCount} PR(s)</div>` : ''}
-    </div>
-  `;
-}).join('');
+      // Mapeia total de séries (aceita total_sets ou total_completed_sets)
+      const totalSets = s.total_sets || s.total_completed_sets || 0;
+      const prCount = Number(s.pr_count) || 0;
+
+      return `
+        <div class="history-card" ${clickAttribute}>
+          <div>
+            <div class="history-title">${s.workout_name || 'Treino Concluído'}</div>
+            <div class="history-meta">${dateFormatted} • ${totalSets} séries concluídas</div>
+          </div>
+          ${prCount > 0 ? `<div class="pr-count">★ ${prCount} PR(s)</div>` : ''}
+        </div>
+      `;
+    }).join('');
   } catch (err) {
     console.error('Erro ao buscar histórico:', err);
   }
 }
 
-/* Modal e Carregamento de Detalhes da Sessão */
+/* MODAL DE DETALHES DA SESSÃO */
 async function openSessionModal(sessionId) {
-  // Previne chamadas caso o ID seja nulo ou string "undefined"
   if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
     console.error('ID da sessão inválido recebido:', sessionId);
     return;
@@ -174,7 +188,7 @@ async function openSessionModal(sessionId) {
 
   const modal = document.getElementById('session-modal');
   const container = document.getElementById('modal-exercises-container');
-  
+
   if (!modal || !container) return;
 
   modal.classList.add('active');
@@ -190,28 +204,36 @@ async function openSessionModal(sessionId) {
       return;
     }
 
-    const { session, sets } = await res.json();
+    const data = await res.json();
+    const sessionData = data.session || data || {};
+    const setsData = data.sets || data.logs || [];
 
-    // Preenche cabeçalho
-    document.getElementById('modal-workout-title').innerText = session.workout_name || 'Treino Concluído';
-    document.getElementById('modal-workout-date').innerText = session.started_at 
-      ? new Date(session.started_at).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })
+    // Preenche cabeçalho do modal
+    const workoutTitle = sessionData.workout_name || sessionData.name || 'Treino Concluído';
+    const startDate = sessionData.start_time || sessionData.started_at;
+    const endDate = sessionData.end_time || sessionData.ended_at;
+
+    document.getElementById('modal-workout-title').innerText = workoutTitle;
+    document.getElementById('modal-workout-date').innerText = startDate
+      ? new Date(startDate).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })
       : '';
 
-    // Preenche estatísticas
-    const duration = session.duration_minutes ? `${session.duration_minutes} min` : '--';
-    const startTime = session.started_at ? new Date(session.started_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
-    const endTime = session.ended_at ? new Date(session.ended_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+    // Preenche estatísticas do modal
+    const duration = sessionData.duration_minutes ? `${sessionData.duration_minutes} min` : '--';
+    const startTime = startDate ? new Date(startDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+    const endTime = endDate ? new Date(endDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+    const totalVolume = Number(sessionData.total_volume) || 0;
+    const prCount = Number(sessionData.pr_count) || 0;
 
     document.getElementById('modal-stat-duration').innerText = duration;
     document.getElementById('modal-stat-time').innerText = `${startTime} - ${endTime}`;
-    document.getElementById('modal-stat-volume').innerText = `${(session.total_volume || 0).toLocaleString('pt-BR')} kg`;
-    document.getElementById('modal-stat-prs').innerText = `${session.pr_count || 0} PR(s)`;
+    document.getElementById('modal-stat-volume').innerText = `${totalVolume.toLocaleString('pt-BR')} kg`;
+    document.getElementById('modal-stat-prs').innerText = `${prCount} PR(s)`;
 
     // Agrupa séries por exercício
     const grouped = {};
-    (sets || []).forEach(set => {
-      const exName = set.exercise_name || 'Exercício';
+    (setsData || []).forEach(set => {
+      const exName = set.exercise_name || set.name || 'Exercício';
       if (!grouped[exName]) grouped[exName] = [];
       grouped[exName].push(set);
     });
@@ -221,27 +243,37 @@ async function openSessionModal(sessionId) {
       return;
     }
 
-    // Renderiza blocos de exercício
+    // Renderiza blocos de exercício com badges de PR
     container.innerHTML = Object.entries(grouped).map(([exName, exerciseSets]) => `
-      <div class="exercise-block">
-        <div class="exercise-block-title">${exName}</div>
-        <div class="sets-grid">
-          ${exerciseSets.map(set => {
-            const isPR = set.is_pr_weight || set.is_pr_volume;
-            const prBadge = set.is_pr_weight ? ' 🏆 PR' : (set.is_pr_volume ? ' ⚡ Vol' : '');
+  <div class="exercise-block">
+    <div class="exercise-block-title">${exName}</div>
+    <div class="sets-grid">
+      ${exerciseSets.map(set => {
+      const isPR = Boolean(set.is_pr_weight || set.is_pr_volume);
 
-            return `
-              <div class="set-chip ${isPR ? 'pr-badge' : ''}">
-                <div class="set-chip-title">Série ${set.set_number}</div>
-                <div class="set-chip-detail">
-                  ${set.weight}kg <span style="color: #71717a; font-size: 0.75rem;">x${set.reps}</span>${prBadge ? `<span class="pr-tag">${prBadge}</span>` : ''}
-                </div>
-              </div>
-            `;
-          }).join('')}
-        </div>
-      </div>
-    `).join('');
+      let prBadges = '';
+      if (set.is_pr_weight) {
+        prBadges += '<span class="pr-tag" style="background: rgba(234, 179, 8, 0.2); color: #eab308; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: bold; white-space: nowrap;">🏆 Carga PR</span>';
+      }
+      if (set.is_pr_volume) {
+        prBadges += '<span class="pr-tag" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: bold; white-space: nowrap;">⚡ Vol PR</span>';
+      }
+
+      return `
+          <div class="set-chip ${isPR ? 'pr-badge' : ''}" style="display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 8px; background: #18181b;">
+            <div class="set-chip-title" style="font-size: 0.75rem; color: #a1a1aa; text-align: center;">Série ${set.set_number}</div>
+            
+            <div class="set-chip-detail" style="font-size: 0.95rem; font-weight: bold; text-align: center;">
+              ${set.weight || 0}kg <span style="color: #71717a; font-size: 0.75rem;">x${set.reps || 0}</span>
+            </div>
+
+            ${prBadges ? `<div class="set-pr-container" style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-top: 2px;">${prBadges}</div>` : ''}
+          </div>
+        `;
+    }).join('')}
+    </div>
+  </div>
+`).join('');
 
   } catch (err) {
     console.error('Erro ao buscar detalhes da sessão:', err);

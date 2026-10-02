@@ -13,6 +13,28 @@ let restTimerInterval = null;
 
 let exercisePRs = {};
 
+function normalizeExerciseName(name) {
+  return String(name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('pt-BR');
+}
+
+function getExercisePR(exercise) {
+  const byId = exercisePRs[exercise.exercise_id];
+  const byName = exercisePRs[normalizeExerciseName(exercise.name)];
+
+  if (!byId) return byName;
+  if (!byName) return byId;
+
+  return {
+    maxWeight: Math.max(byId.maxWeight, byName.maxWeight),
+    maxVolume: Math.max(byId.maxVolume, byName.maxVolume)
+  };
+}
+
 function getAuthHeaders() {
   let token = localStorage.getItem('@RNGymHub:token');
   if (token) {
@@ -108,10 +130,20 @@ async function fetchPRHistory() {
     if (res.ok) {
       const prs = await res.json();
       prs.forEach(pr => {
-        exercisePRs[pr.exercise_id] = {
+        const record = {
           maxWeight: Number(pr.max_weight) || 0,
           maxVolume: Number(pr.max_volume) || 0
         };
+
+        [pr.exercise_id, normalizeExerciseName(pr.exercise_name)].forEach(key => {
+          if (!key) return;
+
+          const existing = exercisePRs[key];
+          exercisePRs[key] = {
+            maxWeight: Math.max(existing?.maxWeight || 0, record.maxWeight),
+            maxVolume: Math.max(existing?.maxVolume || 0, record.maxVolume)
+          };
+        });
       });
     }
   } catch (err) {
@@ -124,7 +156,7 @@ function checkAllPRs() {
 
   workoutData.exercises.forEach(ex => {
     const exId = ex.exercise_id;
-    const previousPR = exercisePRs[exId] || { maxWeight: 0, maxVolume: 0 };
+    const previousPR = getExercisePR(ex) || { maxWeight: 0, maxVolume: 0 };
 
     let currentHighestWeight = previousPR.maxWeight;
     let currentHighestVolume = previousPR.maxVolume;
@@ -170,7 +202,7 @@ function renderWorkoutUI() {
   }
 
   container.innerHTML = workoutData.exercises.map((ex, exIdx) => {
-    const previousPR = exercisePRs[ex.exercise_id];
+    const previousPR = getExercisePR(ex);
     const prText = previousPR && previousPR.maxWeight > 0 
       ? `<span class="pr-badge-header">👑 Recorde: ${previousPR.maxWeight}kg</span>` 
       : '';

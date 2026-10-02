@@ -46,6 +46,57 @@ async function populateDefaultExercisesForUser(client: PoolClient, userId: strin
   }
 }
 
+async function copyTemplateWorkoutForUser(
+  client: PoolClient,
+  templateWorkoutId: string,
+  userId: string,
+  name: string,
+  description: string | null
+) {
+  const workoutRes = await client.query(
+    `INSERT INTO workouts (user_id, name, description, is_template)
+     VALUES ($1, $2, $3, false)
+     RETURNING id`,
+    [userId, name, description]
+  );
+  const workoutId = workoutRes.rows[0].id;
+
+  const exercisesRes = await client.query(
+    `SELECT e.name, e.target_muscle, we.sets, we.reps, we.weight
+     FROM workout_exercises we
+     JOIN exercises e ON e.id = we.exercise_id
+     WHERE we.workout_id = $1
+     ORDER BY e.name ASC`,
+    [templateWorkoutId]
+  );
+
+  for (const exercise of exercisesRes.rows) {
+    let userExerciseRes = await client.query(
+      `SELECT id FROM exercises
+       WHERE user_id = $1 AND LOWER(BTRIM(name)) = LOWER(BTRIM($2))
+       LIMIT 1`,
+      [userId, exercise.name]
+    );
+
+    if (userExerciseRes.rows.length === 0) {
+      userExerciseRes = await client.query(
+        `INSERT INTO exercises (name, target_muscle, user_id)
+         VALUES ($1, $2, $3)
+         RETURNING id`,
+        [exercise.name, exercise.target_muscle, userId]
+      );
+    }
+
+    await client.query(
+      `INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [workoutId, userExerciseRes.rows[0].id, exercise.sets, exercise.reps, exercise.weight || 0]
+    );
+  }
+
+  return workoutId;
+}
+
 // Migrações do Banco de Dados
 async function runMigrations() {
   try {
@@ -446,7 +497,7 @@ async function main() {
   });
 
   // ==========================================
-  // NOVAS ROTAS: TREINOS PRONTOS E DIVISÕES
+  // ROTAS DE TREINOS PRONTOS E DIVISÕES
   // ==========================================
 
   // 1. Listar Treinos Prontos (Aba "Treinos Prontos")
@@ -496,25 +547,13 @@ async function main() {
       inTransaction = true;
 
       // 3. Cria a cópia do treino para o usuário
-      const newWorkoutRes = await client.query(
-        'INSERT INTO workouts (user_id, name, description, is_template) VALUES ($1, $2, $3, false) RETURNING id',
-        [user_id, template.name, template.description]
+      const newWorkoutId = await copyTemplateWorkoutForUser(
+        client,
+        id,
+        user_id,
+        template.name,
+        template.description
       );
-
-      const newWorkoutId = newWorkoutRes.rows[0].id;
-
-      // 4. Copia os exercícios associados usando as colunas corretas (sets e reps)
-      const exercisesRes = await client.query(
-        'SELECT exercise_id, sets, reps, weight FROM workout_exercises WHERE workout_id = $1',
-        [id]
-      );
-
-      for (const ex of exercisesRes.rows) {
-        await client.query(
-          'INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight) VALUES ($1, $2, $3, $4, $5)',
-          [newWorkoutId, ex.exercise_id, ex.sets, ex.reps, ex.weight || 0]
-        );
-      }
 
       await client.query('COMMIT');
       inTransaction = false;
@@ -602,7 +641,7 @@ async function main() {
         w.description
       FROM routine_template_workouts rtw
       JOIN workouts w ON w.id = rtw.workout_id
-      WHERE rtw.routine_template_id = $1
+      WHERE rtw.routine_template_id = $1 AND w.is_template = true
       ORDER BY rtw.day_order ASC
       `,
         [id]
@@ -625,29 +664,14 @@ async function main() {
       for (const row of workoutsRes.rows) {
         const workoutName = `Dia ${row.day_order}: ${row.name}`;
 
-        const newWorkoutRes = await client.query(
-          `INSERT INTO workouts (user_id, name, description, is_template) 
-         VALUES ($1, $2, $3, false) 
-         RETURNING id`,
-          [user_id, workoutName, row.description || '']
+        const newWorkoutId = await copyTemplateWorkoutForUser(
+          client,
+          row.workout_id,
+          user_id,
+          workoutName,
+          row.description || ''
         );
-
-        const newWorkoutId = newWorkoutRes.rows[0].id;
         createdWorkouts.push(newWorkoutId);
-
-        // 4. Copia os exercícios ajustado para as colunas reais (sets, reps, weight)
-        const exercisesRes = await client.query(
-          'SELECT exercise_id, sets, reps, weight FROM workout_exercises WHERE workout_id = $1',
-          [row.workout_id]
-        );
-
-        for (const ex of exercisesRes.rows) {
-          await client.query(
-            `INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight) 
-           VALUES ($1, $2, $3, $4, $5)`,
-            [newWorkoutId, ex.exercise_id, ex.sets, ex.reps, ex.weight || 0]
-          );
-        }
       }
 
       await client.query('COMMIT');
@@ -671,6 +695,7 @@ async function main() {
       client.release();
     }
   });
+
   // ==========================================
   // ROTAS DE EXERCÍCIOS (ISOLADOS POR USUÁRIO)
   // ==========================================
@@ -926,9 +951,11 @@ async function main() {
     }
 
     try {
-      // 1. Busca os dados da ficha de treino
+      // 1. Busca os dados da ficha (permite se for do usuário OU se for um treino pronto/template)
       const workoutRes = await pool.query(
-        'SELECT id, name, description FROM workouts WHERE id = $1 AND user_id = $2',
+        `SELECT id, name, description, is_template 
+         FROM workouts 
+         WHERE id = $1 AND (user_id = $2 OR is_template = true OR user_id IS NULL)`,
         [id, user_id]
       );
 
@@ -981,6 +1008,7 @@ async function main() {
         id: workout.id,
         name: workout.name,
         description: workout.description,
+        is_template: workout.is_template,
         exercises
       });
 
@@ -1090,7 +1118,7 @@ async function main() {
       return reply.status(401).send({ message: 'Usuário não autenticado.' });
     }
 
-    if (!workout_id || !Array.isArray(logs) || logs.length === 0) {
+    if (!Array.isArray(logs) || logs.length === 0) {
       return reply.status(400).send({ message: 'Dados de treino ou logs inválidos.' });
     }
 
@@ -1099,23 +1127,38 @@ async function main() {
     try {
       await client.query('BEGIN');
 
+      // 1. Valida se o treino pertence ao usuário OU se é um modelo/template pronto
+      let validWorkoutId: string | null = null;
+      if (workout_id) {
+        const checkWorkout = await client.query(
+          `SELECT id FROM workouts 
+           WHERE id = $1 AND (user_id = $2 OR is_template = true OR user_id IS NULL)`,
+          [workout_id, user_id]
+        );
+        if (checkWorkout.rows.length > 0) {
+          validWorkoutId = workout_id;
+        }
+      }
+
       const startTimeVal = started_at || start_time || new Date().toISOString();
       const endTimeVal = ended_at || completed_at || end_time || new Date().toISOString();
 
-      // Registra a sessão do treino
+      // 2. Registra a sessão do treino vinculando ao workout_id correto
       const logRes = await client.query(
         `
         INSERT INTO workout_logs (workout_id, user_id, started_at, ended_at)
         VALUES ($1, $2, $3, $4)
         RETURNING id
         `,
-        [workout_id, user_id, startTimeVal, endTimeVal]
+        [validWorkoutId, user_id, startTimeVal, endTimeVal]
       );
 
       const workoutLogId = logRes.rows[0].id;
 
-      // Registra cada série executada com as flags de PR calculadas
+      // 3. Registra cada série executada com tratamento de fallback seguro
       for (const log of logs) {
+        if (!log.exercise_id) continue;
+
         await client.query(
           `
           INSERT INTO set_logs (workout_log_id, exercise_id, set_number, weight, reps, is_pr_weight, is_pr_volume)
@@ -1124,9 +1167,9 @@ async function main() {
           [
             workoutLogId,
             log.exercise_id,
-            log.set_number,
-            log.weight || 0,
-            log.reps || 0,
+            Number(log.set_number) || 1,
+            Number(log.weight) || 0,
+            Number(log.reps) || 0,
             Boolean(log.is_pr_weight),
             Boolean(log.is_pr_volume)
           ]
@@ -1142,7 +1185,10 @@ async function main() {
     } catch (err) {
       await client.query('ROLLBACK');
       console.error('Erro ao salvar logs do treino:', err);
-      return reply.status(500).send({ message: 'Erro interno ao salvar os logs do treino.' });
+      return reply.status(500).send({
+        message: 'Erro interno ao salvar os logs do treino.',
+        error: err instanceof Error ? err.message : String(err)
+      });
     } finally {
       client.release();
     }
@@ -1163,7 +1209,7 @@ async function main() {
           wl.id AS session_id,
           w.name AS workout_name,
           COALESCE(wl.started_at, wl.created_at, CURRENT_TIMESTAMP) AS start_time,
-          COUNT(sl.id)::int AS total_sets,
+          COALESCE(SUM(CASE WHEN sl.reps > 0 AND sl.weight > 0 THEN 1 ELSE 0 END), 0)::int AS total_sets,
           COALESCE(SUM(CASE WHEN sl.is_pr_weight OR sl.is_pr_volume THEN 1 ELSE 0 END), 0)::int AS pr_count
         FROM workout_logs wl
         LEFT JOIN workouts w ON w.id = wl.workout_id
@@ -1184,21 +1230,21 @@ async function main() {
 
   // 3. BUSCAR DETALHES DAS SÉRIES DE UMA SESSÃO ESPECÍFICA (PARA O CARD EXPANSÍVEL DO HISTORY)
   app.get('/history/session/:id', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
-  const { id } = request.params as { id: string };
-  const user_id = request.user?.id || (request.user as any)?.sub;
+    const { id } = request.params as { id: string };
+    const user_id = request.user?.id || (request.user as any)?.sub;
 
-  if (!user_id) {
-    return reply.status(401).send({ message: 'Usuário não autenticado.' });
-  }
+    if (!user_id) {
+      return reply.status(401).send({ message: 'Usuário não autenticado.' });
+    }
 
-  // Valida se o ID está presente e se não é a string 'undefined'
-  if (!id || id === 'undefined' || id === 'null') {
-    return reply.status(400).send({ message: 'ID da sessão inválido.' });
-  }
+    // Valida se o ID está presente e se não é a string 'undefined'
+    if (!id || id === 'undefined' || id === 'null') {
+      return reply.status(400).send({ message: 'ID da sessão inválido.' });
+    }
 
-  try {
-    const sessionRes = await pool.query(
-      `
+    try {
+      const sessionRes = await pool.query(
+        `
       SELECT 
         wl.id AS session_id,
         COALESCE(w.name, 'Treino Avulso') AS workout_name,
@@ -1214,15 +1260,15 @@ async function main() {
       WHERE wl.id = $1 AND wl.user_id = $2
       GROUP BY wl.id, w.name, wl.started_at, wl.ended_at
       `,
-      [id, user_id]
-    );
+        [id, user_id]
+      );
 
-    if (sessionRes.rows.length === 0) {
-      return reply.status(404).send({ message: 'Sessão não encontrada.' });
-    }
+      if (sessionRes.rows.length === 0) {
+        return reply.status(404).send({ message: 'Sessão não encontrada.' });
+      }
 
-    const setsRes = await pool.query(
-      `
+      const setsRes = await pool.query(
+        `
       SELECT 
         sl.id,
         sl.exercise_id,
@@ -1238,18 +1284,18 @@ async function main() {
       WHERE wl.id = $1 AND wl.user_id = $2
       ORDER BY sl.exercise_id, sl.set_number ASC
       `,
-      [id, user_id]
-    );
+        [id, user_id]
+      );
 
-    return reply.status(200).send({
-      session: sessionRes.rows[0],
-      sets: setsRes.rows
-    });
-  } catch (err) {
-    console.error('Erro ao buscar detalhes completos da sessão:', err);
-    return reply.status(500).send({ message: 'Erro ao carregar detalhes da sessão.' });
-  }
-});
+      return reply.status(200).send({
+        session: sessionRes.rows[0],
+        sets: setsRes.rows
+      });
+    } catch (err) {
+      console.error('Erro ao buscar detalhes completos da sessão:', err);
+      return reply.status(500).send({ message: 'Erro ao carregar detalhes da sessão.' });
+    }
+  });
 
   // 4. CONSULTA DE RECORDES HISTÓRICOS (UTILIZADO NO ACTIVE-WORKOUT PARA DETECTAR PRS)
   app.get('/workouts/history/prs', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
@@ -1262,14 +1308,17 @@ async function main() {
     try {
       const result = await pool.query(
         `
-        SELECT 
+        SELECT
           sl.exercise_id,
+          e.name AS exercise_name,
           MAX(sl.weight)::float AS max_weight,
           MAX(sl.weight * sl.reps)::float AS max_volume
         FROM set_logs sl
         JOIN workout_logs wl ON wl.id = sl.workout_log_id
+        JOIN exercises e ON e.id = sl.exercise_id
         WHERE wl.user_id = $1
-        GROUP BY sl.exercise_id
+        GROUP BY sl.exercise_id, e.name
+        ORDER BY e.name ASC
         `,
         [user_id]
       );
@@ -1302,6 +1351,9 @@ async function main() {
           MAX(sl.weight)::float AS max_weight
         FROM set_logs sl
         JOIN workout_logs wl ON wl.id = sl.workout_log_id
+        JOIN workouts w ON w.id = wl.workout_id
+          AND w.user_id = wl.user_id
+          AND (w.is_template = false OR w.is_template IS NULL)
         WHERE sl.exercise_id = $1 AND wl.user_id = $2
         GROUP BY DATE(COALESCE(wl.started_at, wl.created_at))
         ORDER BY DATE(COALESCE(wl.started_at, wl.created_at)) ASC
