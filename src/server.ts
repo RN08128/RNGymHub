@@ -1347,16 +1347,16 @@ async function main() {
       const result = await pool.query(
         `
         SELECT 
-          TO_CHAR(DATE(COALESCE(wl.started_at, wl.created_at)), 'DD/MM') AS date,
-          MAX(sl.weight)::float AS max_weight
+          COALESCE(wl.started_at, wl.created_at)::text AS raw_date,
+          MAX(sl.weight)::float AS max_weight,
+          MAX(sl.reps)::int AS max_reps
         FROM set_logs sl
         JOIN workout_logs wl ON wl.id = sl.workout_log_id
-        JOIN workouts w ON w.id = wl.workout_id
-          AND w.user_id = wl.user_id
-          AND (w.is_template = false OR w.is_template IS NULL)
-        WHERE sl.exercise_id = $1 AND wl.user_id = $2
-        GROUP BY DATE(COALESCE(wl.started_at, wl.created_at))
-        ORDER BY DATE(COALESCE(wl.started_at, wl.created_at)) ASC
+        WHERE sl.exercise_id = $1 
+          AND wl.user_id = $2
+          AND sl.weight > 0
+        GROUP BY wl.id, COALESCE(wl.started_at, wl.created_at)
+        ORDER BY COALESCE(wl.started_at, wl.created_at) ASC
         `,
         [id, user_id]
       );

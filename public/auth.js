@@ -1,4 +1,4 @@
-var API_URL = 'http://localhost:3000' || 'https://proportion-defendant-coalition-innovative.trycloudflare.com';
+var API_URL = window.location.origin || 'http://localhost:3000';
 
 let registeredEmailPending = localStorage.getItem('@RNGymHub:pendingEmail') || '';
 

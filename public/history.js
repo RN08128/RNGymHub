@@ -1,5 +1,4 @@
-var API_URL = 'http://localhost:3000'
-  || 'https://proportion-defendant-coalition-innovative.trycloudflare.com';
+var API_URL = window.location.origin || 'http://localhost:3000';
 
 let chartInstance = null;
 
@@ -67,29 +66,31 @@ async function loadExerciseAnalytics() {
     });
 
     if (!res.ok) {
-      renderChart([], []);
+      renderChart([], [], []);
       return;
     }
 
     const data = await res.json();
 
-    // Formata datas para o gráfico
     const labels = data.map(d => {
-      const rawDate = d.date || d.started_at || d.start_time;
-      if (!rawDate) return '';
-      const dateObj = new Date(rawDate);
-      return dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+      const raw = d.raw_date || d.date;
+      if (!raw) return '--/--';
+      const dateObj = new Date(raw);
+      return isNaN(dateObj.getTime())
+        ? '--/--'
+        : dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
     });
 
     const weights = data.map(d => parseFloat(d.max_weight) || 0);
+    const reps = data.map(d => parseInt(d.max_reps) || 0);
 
-    renderChart(labels, weights);
+    renderChart(labels, weights, reps);
   } catch (err) {
     console.error('Erro ao carregar analytics:', err);
   }
 }
 
-function renderChart(labels, weights) {
+function renderChart(labels, weights, reps) {
   const canvas = document.getElementById('evolutionChart');
   if (!canvas) return;
 
@@ -108,6 +109,14 @@ function renderChart(labels, weights) {
         data: weights.length > 0 ? weights : [0],
         borderColor: '#22c55e',
         backgroundColor: 'rgba(34, 197, 94, 0.1)',
+        borderWidth: 2,
+        tension: 0.3,
+        fill: true
+      }, {
+        label: 'Repetições Máximas',
+        data: reps.length > 0 ? reps : [0],
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
         borderWidth: 2,
         tension: 0.3,
         fill: true
