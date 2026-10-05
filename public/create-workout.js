@@ -1,4 +1,4 @@
-var API_URL = window.location.origin || 'http://localhost:3000';
+var API_URL = "https://apollo-derby-minds-mile.trycloudflare.com" || 'http://localhost:3000';
 
 let availableExercises = [];
 let selectedExercises = [];

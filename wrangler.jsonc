@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "rngymhub-frontend",
+  "pages_build_output_dir": "public",
+  "compatibility_date": "2026-10-01",
+  "vars": {
+    "API_URL": "https://apollo-derby-minds-mile.trycloudflare.com"
+  }
+}
