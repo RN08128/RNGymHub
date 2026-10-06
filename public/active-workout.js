@@ -1,4 +1,4 @@
-var API_URL = "https://losses-offices-eval-drink.trycloudflare.com" || 'http://localhost:3000';
+var API_URL = "https://cases-exchanges-scholarship-approximate.trycloudflare.com" || 'http://localhost:3000';
 
 const urlParams = new URLSearchParams(window.location.search);
 const workoutId = urlParams.get('id');
