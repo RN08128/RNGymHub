@@ -1,4 +1,4 @@
-var API_URL = "https://losses-offices-eval-drink.trycloudflare.com/" || 'http://localhost:3000';
+var API_URL = "https://losses-offices-eval-drink.trycloudflare.com" || 'http://localhost:3000';
 
 let chartInstance = null;
 
