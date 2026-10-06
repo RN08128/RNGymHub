@@ -1,4 +1,4 @@
-var API_URL = "https://cases-exchanges-scholarship-approximate.trycloudflare.com" || 'http://localhost:3000';
+var API_URL = "https://lace-magnitude-inventory-decade.trycloudflare.com" || 'http://localhost:3000';
 
 let chartInstance = null;
 

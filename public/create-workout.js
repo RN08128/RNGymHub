@@ -1,4 +1,4 @@
-var API_URL = "https://cases-exchanges-scholarship-approximate.trycloudflare.com/" || 'http://localhost:3000';
+var API_URL = "https://lace-magnitude-inventory-decade.trycloudflare.com" || 'http://localhost:3000';
 
 let availableExercises = [];
 let selectedExercises = [];
@@ -26,26 +26,52 @@ function getAuthHeaders() {
   };
 }
 
-// 1. Carregar lista de exercícios disponíveis
+// 1. Carregar lista de exercícios disponíveis (Tratamento para evitar erro de .map)
 async function fetchExercises() {
   try {
     const res = await fetch(`${API_URL}/exercises`, {
       headers: getAuthHeaders()
     });
-    availableExercises = await res.json();
+
+    // Se o servidor retornar erro HTTP (401, 404, 500, etc.)
+    if (!res.ok) {
+      console.error(`Erro HTTP na API /exercises: Status ${res.status}`);
+      availableExercises = [];
+    } else {
+      const data = await res.json();
+      
+      // Valida se o retorno é um Array direto ou se veio dentro de uma propriedade do objeto
+      if (Array.isArray(data)) {
+        availableExercises = data;
+      } else if (Array.isArray(data.exercises)) {
+        availableExercises = data.exercises;
+      } else if (Array.isArray(data.data)) {
+        availableExercises = data.data;
+      } else {
+        console.warn('O retorno da API não é uma lista válida:', data);
+        availableExercises = [];
+      }
+    }
 
     const select = document.getElementById('select-exercise');
+    if (!select) return;
 
-    if (!availableExercises || availableExercises.length === 0) {
-      select.innerHTML = '<option value="">Nenhum exercício cadastrado</option>';
+    if (!Array.isArray(availableExercises) || availableExercises.length === 0) {
+      select.innerHTML = '<option value="">Nenhum exercício disponível</option>';
       return;
     }
 
     select.innerHTML = availableExercises.map(ex =>
       `<option value="${ex.id}">${ex.name} (${ex.target_muscle || 'Geral'})</option>`
     ).join('');
+
   } catch (err) {
-    console.error('Erro ao buscar exercícios:', err);
+    console.error('Erro de conexão ao buscar exercícios:', err);
+    availableExercises = [];
+    const select = document.getElementById('select-exercise');
+    if (select) {
+      select.innerHTML = '<option value="">Erro ao carregar exercícios</option>';
+    }
   }
 }
 
@@ -214,7 +240,7 @@ function updateExerciseInline(index, field, value) {
   if (isNaN(parsedValue) || parsedValue <= 0) return;
 
   selectedExercises[index][field] = parsedValue;
-  
+
   if (field === 'target_sets') {
     selectedExercises[index].sets = parsedValue;
   } else if (field === 'target_reps') {
