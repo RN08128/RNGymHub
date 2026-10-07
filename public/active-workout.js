@@ -1,4 +1,4 @@
-var API_URL = "https://lace-magnitude-inventory-decade.trycloudflare.com" || 'http://localhost:3000';
+var API_URL = "https://confidence-newman-stations-audit.trycloudflare.com" || 'http://localhost:3000';
 
 const urlParams = new URLSearchParams(window.location.search);
 const workoutId = urlParams.get('id');
