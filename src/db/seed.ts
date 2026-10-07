@@ -8,10 +8,11 @@ async function seed() {
     console.log('🌱 Iniciando o povoamento do banco de dados (Seed)...');
     await client.query('BEGIN');
 
-    // 1. Mapeia e insere os exercícios ajustados
+    // 1. Mapeia e insere os exercícios modelos
     const exerciseMap = await seedDefaultExercises();
     console.log('✅ Exercícios modelos criados/mapeados.');
 
+    // Corrigido: Evita duplicar se o exercício do usuário já existir
     const mismatchedExercises = await client.query(
       `SELECT DISTINCT w.user_id, we.workout_id, we.exercise_id,
               e.name, e.target_muscle
@@ -25,7 +26,7 @@ async function seed() {
     for (const exercise of mismatchedExercises.rows) {
       let userExerciseRes = await client.query(
         `SELECT id FROM exercises
-         WHERE user_id = $1 AND LOWER(BTRIM(name)) = LOWER(BTRIM($2))
+         WHERE user_id = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2))
          LIMIT 1`,
         [exercise.user_id, exercise.name]
       );
@@ -35,7 +36,7 @@ async function seed() {
           `INSERT INTO exercises (name, target_muscle, user_id)
            VALUES ($1, $2, $3)
            RETURNING id`,
-          [exercise.name, exercise.target_muscle, exercise.user_id]
+          [exercise.name.trim(), exercise.target_muscle, exercise.user_id]
         );
       }
 
@@ -120,7 +121,7 @@ async function seed() {
 
     for (const r of routinesData) {
       const checkRoutine = await client.query(
-        `SELECT id FROM routine_templates WHERE name = $1 LIMIT 1`,
+        `SELECT id FROM routine_templates WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) LIMIT 1`,
         [r.name]
       );
 
@@ -155,7 +156,8 @@ async function seed() {
     // -------------------------------------------------------------------------
     const createWorkoutTemplate = async (name: string, description: string) => {
       const checkRes = await client.query(
-        `SELECT id FROM workouts WHERE name = $1 AND is_template = true LIMIT 1`,
+        `SELECT id FROM workouts 
+         WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) AND is_template = true LIMIT 1`,
         [name]
       );
 
@@ -203,7 +205,6 @@ async function seed() {
     // A. Upper / Lower
     const ulId = routineMap['Upper / Lower (Superior / Inferior)'];
     if (ulId) {
-      // Upper A
       const wUpperA = await createWorkoutTemplate('Upper A (Foco Força)', 'Superiores com ênfase em compostos pesados.');
       await linkWorkoutExercise(wUpperA, 'Supino Reto com Barra', 4, 8);
       await linkWorkoutExercise(wUpperA, 'Remada Curvada com Barra', 4, 8);
@@ -212,7 +213,6 @@ async function seed() {
       await linkWorkoutExercise(wUpperA, 'Tríceps Pulley com Corda', 2, 12);
       await linkWorkoutExercise(wUpperA, 'Rosca Martelo com Halteres', 2, 12);
 
-      // Lower A
       const wLowerA = await createWorkoutTemplate('Lower A (Foco Quadríceps)', 'Inferiores com ênfase em Agachamento.');
       await linkWorkoutExercise(wLowerA, 'Agachamento Livre', 4, 8);
       await linkWorkoutExercise(wLowerA, 'Leg Press 45', 4, 10);
@@ -220,7 +220,6 @@ async function seed() {
       await linkWorkoutExercise(wLowerA, 'Mesa Flexora', 4, 12);
       await linkWorkoutExercise(wLowerA, 'Panturrilha em Pé', 4, 15);
 
-      // Upper B
       const wUpperB = await createWorkoutTemplate('Upper B (Foco Hipertrofia)', 'Superiores com maior volume de braços/deltoides.');
       await linkWorkoutExercise(wUpperB, 'Supino Inclinado com Halteres', 4, 10);
       await linkWorkoutExercise(wUpperB, 'Puxada Frontal com Pegada Neutra', 4, 10);
@@ -229,7 +228,6 @@ async function seed() {
       await linkWorkoutExercise(wUpperB, 'Rosca Direta com Barra', 3, 12);
       await linkWorkoutExercise(wUpperB, 'Tríceps Testa com Barra', 3, 12);
 
-      // Lower B
       const wLowerB = await createWorkoutTemplate('Lower B (Foco Posterior)', 'Inferiores com ênfase em Posterior e Stiff.');
       await linkWorkoutExercise(wLowerB, 'Stiff com Barra', 4, 8);
       await linkWorkoutExercise(wLowerB, 'Leg Press Horizontal', 4, 10);
@@ -274,8 +272,8 @@ async function seed() {
 
     const pplUlId = routineMap['PPL + Upper / Lower (5 Dias)'];
     if (pplUlId) {
-      const checkUpperA = await client.query(`SELECT id FROM workouts WHERE name = 'Upper A (Foco Força)' AND is_template = true LIMIT 1`);
-      const checkLowerA = await client.query(`SELECT id FROM workouts WHERE name = 'Lower A (Foco Quadríceps)' AND is_template = true LIMIT 1`);
+      const checkUpperA = await client.query(`SELECT id FROM workouts WHERE LOWER(TRIM(name)) = LOWER('Upper A (Foco Força)') AND is_template = true LIMIT 1`);
+      const checkLowerA = await client.query(`SELECT id FROM workouts WHERE LOWER(TRIM(name)) = LOWER('Lower A (Foco Quadríceps)') AND is_template = true LIMIT 1`);
 
       await linkRoutineWorkout(pplUlId, wPush, 1);
       await linkRoutineWorkout(pplUlId, wPull, 2);
@@ -375,7 +373,7 @@ async function seed() {
     }
 
     await client.query('COMMIT');
-    console.log('🎉 Seed executado com sucesso!');
+    console.log('🎉 Seed executado com sucesso e sem duplicações!');
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('❌ Erro ao executar o Seed:', error);

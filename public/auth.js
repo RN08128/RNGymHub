@@ -1,4 +1,4 @@
-var API_URL = "https://confidence-newman-stations-audit.trycloudflare.com" || 'http://localhost:3000';
+var API_URL = 'https://viruses-potatoes-random-exceed.trycloudflare.com';
 
 let registeredEmailPending = localStorage.getItem('@RNGymHub:pendingEmail') || '';
 

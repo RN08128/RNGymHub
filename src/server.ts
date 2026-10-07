@@ -709,7 +709,10 @@ async function main() {
       }
 
       const result = await pool.query(
-        'SELECT * FROM exercises WHERE user_id = $1 ORDER BY name ASC',
+        `SELECT id, name, target_muscle 
+   FROM exercises 
+   WHERE user_id IS NULL OR user_id = $1 
+   ORDER BY name ASC`,
         [user_id]
       );
 

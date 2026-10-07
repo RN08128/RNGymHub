@@ -61,7 +61,7 @@ export const defaultExercises = [
     { name: 'Rosca Scott com Halteres', target_muscle: 'Bíceps' },
     { name: 'Rosca Inversa na Polia', target_muscle: 'Bíceps' },
 
-    //Tríceps
+    // Tríceps
     { name: 'Tríceps Testa com Halteres', target_muscle: 'Tríceps' },
     { name: 'Tríceps Testa com Barra', target_muscle: 'Tríceps' },
     { name: 'Tríceps Coice com Halteres', target_muscle: 'Tríceps' },
@@ -95,9 +95,15 @@ export async function seedDefaultExercises() {
         const exerciseMap: Record<string, string> = {};
 
         for (const ex of defaultExercises) {
+            const cleanName = ex.name.trim();
+
+            // Busca ignorando maiúsculas/minúsculas e espaços extras nas pontas
             const checkEx = await client.query(
-                `SELECT id FROM exercises WHERE name = $1 AND user_id IS NULL LIMIT 1`,
-                [ex.name]
+                `SELECT id FROM exercises 
+                 WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) 
+                   AND user_id IS NULL 
+                 ORDER BY created_at ASC LIMIT 1`,
+                [cleanName]
             );
 
             if (checkEx.rows.length > 0) {
@@ -105,9 +111,9 @@ export async function seedDefaultExercises() {
             } else {
                 const res = await client.query(
                     `INSERT INTO exercises (name, target_muscle, user_id)
-           VALUES ($1, $2, NULL)
-           RETURNING id`,
-                    [ex.name, ex.target_muscle]
+                     VALUES ($1, $2, NULL)
+                     RETURNING id`,
+                    [cleanName, ex.target_muscle]
                 );
                 exerciseMap[ex.name] = res.rows[0].id;
             }
