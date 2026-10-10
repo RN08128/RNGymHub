@@ -1,4 +1,4 @@
-var API_URL = 'https://viruses-potatoes-random-exceed.trycloudflare.com';
+var API_URL = 'https://kenneth-exhaust-configure-transformation.trycloudflare.com';
 let currentTab = 'custom'; // 'custom', 'templates' ou 'routines'
 
 // Função auxiliar para recuperar o token formatado corretamente

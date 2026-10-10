@@ -1,4 +1,4 @@
-var API_URL = 'https://viruses-potatoes-random-exceed.trycloudflare.com';
+var API_URL = 'https://kenneth-exhaust-configure-transformation.trycloudflare.com';
 
 let registeredEmailPending = localStorage.getItem('@RNGymHub:pendingEmail') || '';
 

@@ -1,4 +1,4 @@
-var API_URL = 'https://viruses-potatoes-random-exceed.trycloudflare.com';
+var API_URL = 'https://kenneth-exhaust-configure-transformation.trycloudflare.com';
 
 const urlParams = new URLSearchParams(window.location.search);
 const workoutId = urlParams.get('id');
@@ -41,7 +41,7 @@ function getAuthHeaders() {
     try {
       const parsed = JSON.parse(token);
       token = Array.isArray(parsed) ? parsed.join('.') : parsed;
-    } catch (e) {}
+    } catch (e) { }
   }
   return {
     'Content-Type': 'application/json',
@@ -68,13 +68,13 @@ async function initActiveWorkout() {
       const errData = await res.json().catch(() => ({}));
       throw new Error(errData.message || `Erro HTTP ${res.status}`);
     }
-    
+
     const fetchedWorkout = await res.json();
 
     await fetchPRHistory();
 
     const savedState = localStorage.getItem(STORAGE_KEY);
-    
+
     if (savedState) {
       const parsed = JSON.parse(savedState);
       workoutData = parsed.workoutData;
@@ -82,7 +82,7 @@ async function initActiveWorkout() {
       totalWorkoutSeconds = parsed.totalWorkoutSeconds || 0;
     } else {
       startTimeISO = new Date().toISOString();
-      
+
       const exercisesList = fetchedWorkout.exercises || fetchedWorkout.workout_exercises || [];
 
       workoutData = {
@@ -92,7 +92,7 @@ async function initActiveWorkout() {
           const repsCount = Number(ex.target_reps || ex.reps) || 10;
           const exerciseId = ex.exercise_id || ex.id;
           const exerciseName = ex.name || ex.exercise_name || 'Exercício';
-          
+
           return {
             ...ex,
             exercise_id: exerciseId,
@@ -108,7 +108,7 @@ async function initActiveWorkout() {
           };
         })
       };
-      
+
       saveProgressToStorage();
     }
 
@@ -203,8 +203,8 @@ function renderWorkoutUI() {
 
   container.innerHTML = workoutData.exercises.map((ex, exIdx) => {
     const previousPR = getExercisePR(ex);
-    const prText = previousPR && previousPR.maxWeight > 0 
-      ? `<span class="pr-badge-header">👑 Recorde: ${previousPR.maxWeight}kg</span>` 
+    const prText = previousPR && previousPR.maxWeight > 0
+      ? `<span class="pr-badge-header">👑 Recorde: ${previousPR.maxWeight}kg</span>`
       : '';
 
     return `
@@ -223,9 +223,9 @@ function renderWorkoutUI() {
 
         <div class="sets-list">
           ${ex.sets_data.map((set, setIdx) => {
-            const isPR = set.is_pr_weight || set.is_pr_volume;
-            
-            return `
+      const isPR = set.is_pr_weight || set.is_pr_volume;
+
+      return `
               <div class="set-row ${set.completed ? 'completed' : ''} ${isPR ? 'is-pr' : ''}">
                 <div class="set-num-container">
                   <span class="set-num">#${set.set_number}</span>${isPR ? '<span class="pr-tag-mini">👑 PR</span>' : ''}
@@ -243,7 +243,7 @@ function renderWorkoutUI() {
                 </button>
               </div>
             `;
-          }).join('')}
+    }).join('')}
         </div>
 
         <button type="button" class="btn-add-set" onclick="addSetToExercise(${exIdx})">
@@ -292,9 +292,9 @@ function saveProgressToStorage() {
 function toggleSetCompleted(exerciseIndex, setIndex) {
   const currentStatus = workoutData.exercises[exerciseIndex].sets_data[setIndex].completed;
   const newStatus = !currentStatus;
-  
+
   workoutData.exercises[exerciseIndex].sets_data[setIndex].completed = newStatus;
-  
+
   checkAllPRs();
   saveProgressToStorage();
   renderWorkoutUI();
@@ -319,7 +319,7 @@ function updateSetInput(exerciseIndex, setIndex, field, value) {
 function addSetToExercise(exerciseIndex) {
   const currentSets = workoutData.exercises[exerciseIndex].sets_data;
   const lastSet = currentSets[currentSets.length - 1] || { weight: 0, reps: 10 };
-  
+
   currentSets.push({
     set_number: currentSets.length + 1,
     weight: lastSet.weight,
