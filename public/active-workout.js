@@ -1,4 +1,4 @@
-var API_URL = 'https://kenneth-exhaust-configure-transformation.trycloudflare.com';
+var API_URL = 'http://localhost:3000'; // testes
 
 const urlParams = new URLSearchParams(window.location.search);
 const workoutId = urlParams.get('id');
