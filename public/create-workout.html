@@ -25,6 +25,9 @@
                         <a href="history.html" id="nav-history">📊 Histórico</a>
                     </li>
                     <li class="nav-item">
+                        <a href="tdee.html" id="nav-tdee">🔥 TDEE</a>
+                    </li>
+                    <li class="nav-item">
                         <a href="create-workout.html" id="nav-create" class="btn-create-nav active">➕ Criar Ficha</a>
                     </li>
                 </ul>
@@ -65,11 +68,13 @@
                 <label for="select-exercise">Selecione o Exercício</label>
                 <div class="select-with-action">
                     <select id="select-exercise"></select>
-                    <button type="button" class="btn-delete-icon" onclick="deleteSelectedExercise()" title="Deletar exercício do banco">
+                    <button type="button" class="btn-delete-icon" onclick="deleteSelectedExercise()"
+                        title="Deletar exercício do banco">
                         🗑️
                     </button>
                 </div>
-                <button type="button" class="link-new-ex" onclick="toggleModal(true)">+ Cadastrar Novo Exercício</button>
+                <button type="button" class="link-new-ex" onclick="toggleModal(true)">+ Cadastrar Novo
+                    Exercício</button>
             </div>
 
             <!-- Inputs Modernos de Sets e Reps -->
@@ -112,8 +117,10 @@
                 <label for="new-ex-muscle">Grupo Muscular Alvo</label>
                 <input type="text" id="new-ex-muscle" placeholder="Ex: Costas">
             </div>
-            <button type="button" class="btn-finish" style="margin-top: 12px;" onclick="createNewExercise()">Cadastrar</button>
-            <button type="button" class="btn-secondary" style="margin-top: 8px;" onclick="toggleModal(false)">Cancelar</button>
+            <button type="button" class="btn-finish" style="margin-top: 12px;"
+                onclick="createNewExercise()">Cadastrar</button>
+            <button type="button" class="btn-secondary" style="margin-top: 8px;"
+                onclick="toggleModal(false)">Cancelar</button>
         </div>
     </div>
 

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calculadora TDEE - RNGymHub</title>
+  <link rel="stylesheet" href="style-global.css">
+  <link rel="stylesheet" href="tdee.css">
+</head>
+
+<body>
+
+  <header class="main-header">
+    <div class="nav-container">
+      <a href="workouts.html" class="brand-logo">⚡RNGymHub</a>
+      <nav>
+        <ul class="nav-links">
+          <li class="nav-item">
+            <a href="workouts.html" id="nav-workouts">🏋️ Treinos</a>
+          </li>
+          <li class="nav-item">
+            <a href="history.html" id="nav-history">📊 Histórico</a>
+          </li>
+          <li class="nav-item">
+            <a href="tdee.html" id="nav-tdee" class="active">🔥 TDEE</a>
+          </li>
+          <li class="nav-item">
+            <a href="create-workout.html" id="nav-create" class="btn-create-nav">➕ Criar Ficha</a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <header style="margin-bottom: 24px;">
+      <h1>Calculadora de TDEE & Calorias</h1>
+      <p class="subtitle">Descubra seu gasto calórico diário, semanal e metas nutricionais</p>
+    </header>
+
+    <div class="tdee-grid">
+      <!-- Formulário de Entrada de Dados -->
+      <div class="tdee-card">
+        <h3>Seus Dados Físicos</h3>
+        <form id="tdee-form" onsubmit="calculateTDEE(event)">
+          
+          <div class="form-group">
+            <label>Gênero Biological</label>
+            <div class="radio-group">
+              <label class="radio-label">
+                <input type="radio" name="gender" value="male" checked> Homem
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="gender" value="female"> Mulher
+              </label>
+            </div>
+          </div>
+
+          <div class="grid-2-col">
+            <div class="form-group">
+              <label for="age">Idade (anos)</label>
+              <input type="number" id="age" min="10" max="120" placeholder="Ex: 25" required>
+            </div>
+            <div class="form-group">
+              <label for="weight">Peso (kg)</label>
+              <input type="number" id="weight" step="0.1" min="30" max="300" placeholder="Ex: 75.5" required>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="height">Altura (cm)</label>
+            <input type="number" id="height" min="100" max="250" placeholder="Ex: 175" required>
+          </div>
+
+          <div class="form-group">
+            <label for="activity">Nível de Atividade Física</label>
+            <select id="activity" required>
+              <option value="1.2">Sedentário (Pouco ou nenhum exercício)</option>
+              <option value="1.375">Levemente Ativo (1 a 3 dias/semana)</option>
+              <option value="1.55" selected>Moderadamente Ativo (3 a 5 dias/semana)</option>
+              <option value="1.725">Muito Ativo (6 a 7 dias/semana)</option>
+              <option value="1.9">Extremamente Ativo (Atleta / Treino pesado 2x ao dia)</option>
+            </select>
+          </div>
+
+          <button type="submit" class="btn-finish" style="width: 100%; margin-top: 10px;">Calcular TDEE</button>
+        </form>
+      </div>
+
+      <!-- Exibição dos Resultados -->
+      <div class="tdee-card results-card" id="results-card">
+        <h3>Seu Gasto Calórico</h3>
+        <div id="results-placeholder" class="empty-state">
+          <p>Preencha os dados ao lado e clique em calcular para visualizar seus resultados.</p>
+        </div>
+
+        <div id="results-content" class="hidden">
+          <div class="stats-hero">
+            <div class="stat-box">
+              <span class="stat-label">GASTO DIÁRIO (TDEE)</span>
+              <strong id="res-daily-tdee" class="stat-value highlight-green">0 kcal</strong>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">GASTO SEMANAL</span>
+              <strong id="res-weekly-tdee" class="stat-value highlight-blue">0 kcal</strong>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">TAXA METABÓLICA BASAL (BMR)</span>
+              <strong id="res-bmr" class="stat-value">0 kcal</strong>
+            </div>
+          </div>
+
+          <h4 style="margin-top: 24px; margin-bottom: 12px; color: #f4f4f5;">Metas Sugeridas para o seu Objetivo</h4>
+          <div class="goals-grid">
+            <div class="goal-card deficit">
+              <span class="goal-title">📉 Perda de Peso (Déficit)</span>
+              <span class="goal-kcal" id="goal-cutting">0 kcal/dia</span>
+              <small>Déficit de ~500 kcal</small>
+            </div>
+            <div class="goal-card maintenance">
+              <span class="goal-title">⚖️ Manutenção</span>
+              <span class="goal-kcal" id="goal-maintenance">0 kcal/dia</span>
+              <small>Manter peso atual</small>
+            </div>
+            <div class="goal-card surplus">
+              <span class="goal-title">📈 Ganho Muscular (Superávit)</span>
+              <span class="goal-kcal" id="goal-bulking">0 kcal/dia</span>
+              <small>Superávit de ~300 kcal</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="tdee.js"></script>
+  <script src="nav.js" defer></script>
+</body>
+
+</html>

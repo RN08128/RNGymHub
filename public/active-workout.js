@@ -1,4 +1,4 @@
-var API_URL = 'http://localhost:3000'; // testes
+var API_URL = 'https://crops-rocky-prix-similarly.trycloudflare.com'; // testes
 
 const urlParams = new URLSearchParams(window.location.search);
 const workoutId = urlParams.get('id');

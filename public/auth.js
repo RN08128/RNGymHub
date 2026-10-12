@@ -1,4 +1,4 @@
-var API_URL = 'http://localhost:3000'; // testes
+var API_URL = 'https://crops-rocky-prix-similarly.trycloudflare.com'; // testes
 
 let registeredEmailPending = localStorage.getItem('@RNGymHub:pendingEmail') || '';
 

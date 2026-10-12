@@ -2,12 +2,17 @@
 document.addEventListener('DOMContentLoaded', () => {
   const currentPath = window.location.pathname;
 
-  if (currentPath.includes('history.html')) {
-    document.getElementById('nav-history')?.classList.add('active');
+  if (currentPath.includes('workouts.html') || currentPath === '') {
+    const navWorkouts = document.getElementById('nav-workouts');
+    if (navWorkouts) navWorkouts.classList.add('active');
+  } else if (currentPath.includes('history.html')) {
+    const navHistory = document.getElementById('nav-history');
+    if (navHistory) navHistory.classList.add('active');
+  } else if (currentPath.includes('tdee.html')) {
+    const navTdee = document.getElementById('nav-tdee');
+    if (navTdee) navTdee.classList.add('active');
   } else if (currentPath.includes('create-workout.html')) {
-    document.getElementById('nav-create')?.classList.add('active');
-  } else {
-    // Padrão (workouts.html, index.html ou raiz)
-    document.getElementById('nav-workouts')?.classList.add('active');
+    const navCreate = document.getElementById('nav-create');
+    if (navCreate) navCreate.classList.add('active');
   }
 });
